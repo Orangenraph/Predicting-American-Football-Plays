@@ -7,11 +7,10 @@ __pycache__/
 *.egg-info/
 dist/
 build/
+__pycache__
 
-# Jupyter
 .ipynb_checkpoints/
 
-# Daten (oft zu groß für Git)
 data/raw/
 data/processed/
 data/cache/
@@ -19,7 +18,6 @@ data/cache/
 *.parquet
 *.pkl
 
-# Environments
 .env
 .venv/
 venv/
@@ -29,9 +27,8 @@ env/
 .vscode/
 .idea/
 
-# OS
+
 .DS_Store
 Thumbs.db
 
-# Outputs (optional – nur wenn du Figures nicht tracken willst)
 # outputs/
