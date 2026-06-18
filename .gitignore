@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Daten (oft zu groß für Git)
+data/raw/
+data/processed/
+data/cache/
+*.csv
+*.parquet
+*.pkl
+
+# Environments
+.env
+.venv/
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Outputs (optional – nur wenn du Figures nicht tracken willst)
+# outputs/
