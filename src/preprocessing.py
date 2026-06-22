@@ -37,7 +37,7 @@ def select_features(df: pd.DataFrame, feature_set: list) -> pd.DataFrame:
     return df[feature_set].copy()
 
 # ---------------------------------------------------------------------------
-# Step 3 - Clean / impute missing values
+# Step 3 - Clean / impute missing values - if under 1% missing just drop
 # ---------------------------------------------------------------------------
 
 def _impute_numeric(df: pd.DataFrame, feature_config: dict) -> pd.DataFrame:
@@ -194,7 +194,7 @@ def preprocessing_report(df_raw: pd.DataFrame,
     
     # selected features cleaining detail
     print("\nSELECTED FEATURES IMPUTATION DETAILS:")
-    print(f"   {'Feature Name':<30} | {'NaNs Before':<12} | {'NaNs After':<11} | {'Filled':<8}")
+    print(f"   {'Feature Name':<30} | {'NaNs Before':<12} | {'NaNs After':<11} | {'Filled/Removed':<8}")
     print("   " + "-" * 70)
     # compare bfore and after cleaning
     for col in feature_set:
@@ -263,16 +263,28 @@ def preprocess(
     # calc exactly what values WILL be used for imputation - only for report! 
     fill_values = {}
     for col in feature_set:
-        if col in feature_config.get("numeric", []) or col in feature_config.get("ordinal", {}):
-            median_val = X[col].median()
-            fill_values[col] = f"{median_val} (median)"
-        elif col in feature_config.get("binary", []) or col in feature_config.get("nominal", []):
-            mode_vals = X[col].mode()
-            if not mode_vals.empty:
-                fill_values[col] = f"{mode_vals[0]} (mode)"
+
+        # calc missing %
+        if col in X.columns and X[col].isna().any():
+            nan_fraction = X[col].isna().mean()
+
+            # if under 1% drop
+            if nan_fraction < 0.01:
+                fill_values[col] = "dropped (<1% NaNs)"
+            elif col in feature_config.get("numeric", []) or col in feature_config.get("ordinal", {}):
+                median_val = X[col].median()
+                fill_values[col] = f"{median_val} (median)"
+            elif col in feature_config.get("binary", []) or col in feature_config.get("nominal", []):
+                mode_vals = X[col].mode()
+                if not mode_vals.empty:
+                    fill_values[col] = f"{mode_vals[0]} (mode)"
 
     # Step 3 fill any missing values
     X_imputed = impute_missing(X, feature_config=feature_config)
+    
+    # if someone got deletat to adjust y 
+    y = y.loc[X_imputed.index].reset_index(drop=True)
+    X_imputed = X_imputed.reset_index(drop=True)
 
     # recprd NaN counts of selected features AFTER imputation - should be 0
     nan_counts_after = X_imputed.isna().sum()
