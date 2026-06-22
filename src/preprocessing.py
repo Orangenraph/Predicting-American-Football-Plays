@@ -48,20 +48,30 @@ def _impute_numeric(df: pd.DataFrame, feature_config: dict) -> pd.DataFrame:
 
     # look in active feature set if it has NaNs
     numeric_features = feature_config.get("numeric", [])
+
     for col in numeric_features:
         if col in df.columns and df[col].isna().any():
-            df[col] = df[col].fillna(df[col].median()) #median
+            nan_fraction = df[col].isna().mean()
+            if nan_fraction < 0.01:
+                df = df.dropna(subset=[col])
+            else:
+                df[col] = df[col].fillna(df[col].median())
     return df
 
 
 def _impute_binary(df: pd.DataFrame, feature_config: dict) -> pd.DataFrame:
     """Fills missing values with most frequent value"""
     binary_features = feature_config.get("binary", [])
+
     for col in binary_features:
         if col in df.columns and df[col].isna().any():
-            mode_vals = df[col].mode() #modus
-            if not mode_vals.empty:
-                df[col] = df[col].fillna(mode_vals[0])
+            nan_fraction = df[col].isna().mean()
+            if nan_fraction < 0.01:
+                df = df.dropna(subset=[col])
+            else:
+                mode_vals = df[col].mode()
+                if not mode_vals.empty:
+                    df[col] = df[col].fillna(mode_vals[0])
     return df
 
 
@@ -75,19 +85,28 @@ def _impute_ordinal(df: pd.DataFrame, feature_config: dict) -> pd.DataFrame:
 
     for col in ordinal_features.keys():
         if col in df.columns and df[col].isna().any():
-            df[col] = df[col].fillna(df[col].median()) #median
+            nan_fraction = df[col].isna().mean()
+            if nan_fraction < 0.01:
+                df = df.dropna(subset=[col])
+            else:
+                df[col] = df[col].fillna(df[col].median())
     return df
-
 
 def _impute_nominal(df: pd.DataFrame, feature_config: dict) -> pd.DataFrame:
     """Fills missing text categories with most common text category"""
     nominal_features = feature_config.get("nominal", [])
+
     for col in nominal_features:
         if col in df.columns and df[col].isna().any():
-            mode_vals = df[col].mode() #modus
-            if not mode_vals.empty:
-                df[col] = df[col].fillna(mode_vals[0])
+            nan_fraction = df[col].isna().mean()
+            if nan_fraction < 0.01:
+                df = df.dropna(subset=[col])
+            else:
+                mode_vals = df[col].mode()
+                if not mode_vals.empty:
+                    df[col] = df[col].fillna(mode_vals[0])
     return df
+
 
 
 def impute_missing(df: pd.DataFrame, feature_config: dict) -> pd.DataFrame:
