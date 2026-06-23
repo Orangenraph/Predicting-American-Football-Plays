@@ -5,7 +5,7 @@ import pandas as pd
 import torch
 import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader, random_split
-
+from sklearn.preprocessing import StandardScaler
 
 # ---------------------------------------------------------------------------
 # Dataset
@@ -48,9 +48,12 @@ class FNN(nn.Module):
         super().__init__()
         # definiing layers seq.
         self.network = nn.Sequential(
-            nn.Linear(n_features, 64),
+            nn.Linear(n_features, 128),
             nn.ReLU(),
             nn.Dropout(dropout), # helps prevent network from memorizing sprase features patterns
+            nn.Linear(128, 64),
+            nn.ReLU(),
+            nn.Dropout(dropout),
             nn.Linear(64, 32),
             nn.ReLU(),
             nn.Dropout(dropout),
@@ -73,7 +76,7 @@ def train_fnn(
     val_split: float = 0.1,
     epochs: int = 100,
     batch_size: int = 512,
-    lr: float = 1e-3,
+    lr: float = 3e-4,
     patience: int = 10,
     dropout: float = 0.3,
     random_state: int = 42,
@@ -96,6 +99,8 @@ def train_fnn(
         random_state : seed for reproducibility
     """
     # seeding for reporducible
+    scaler = StandardScaler()
+    X_train = pd.DataFrame(scaler.fit_transform(X_train), columns=X_train.columns)
     torch.manual_seed(random_state)
     np.random.seed(random_state)
 
@@ -181,7 +186,7 @@ def train_fnn(
     model.load_state_dict(best_weights)
     print(f"[train_fnn] Training complete. Best val_loss: {best_val_loss:.4f}")
 
-    return model, history
+    return model, history, scaler
 
 
 # ---------------------------------------------------------------------------
@@ -197,13 +202,15 @@ class FNNWrapper:
         metrics = evaluate_model(wrapper, X_test, y_test, "FNN", "final")
     """
 
-    def __init__(self, model: FNN, threshold: float = 0.5):
+    def __init__(self, model: FNN, scaler: StandardScaler,threshold: float = 0.5):
         self.model     = model
+        self.scaler    = scaler
         self.threshold = threshold
 
     def predict_proba(self, X: pd.DataFrame) -> np.ndarray:
         self.model.eval() #ensure dropout is off during evalutation
-        X_tensor = torch.tensor(X.values, dtype=torch.float32)
+        X_scaled = pd.DataFrame(self.scaler.transform(X), columns=X.columns)
+        X_tensor = torch.tensor(X_scaled.values, dtype=torch.float32)
         with torch.no_grad():
             proba_pass = self.model(X_tensor).numpy()
         proba_run = 1 - proba_pass

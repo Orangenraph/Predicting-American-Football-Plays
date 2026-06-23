@@ -25,12 +25,12 @@ FEATURE_SETS = {
         "wp",
         "shotgun", "down", "score_differential", "ydstogo", "posteam_timeouts_remaining", "quarter_seconds_remaining", "no_huddle"
     ],
-    "000": [
-        "surface", "season", "week", "roof", "location", "div_game", "spread_line",
-        "goal_to_go", "game_seconds_remaining", "defteam_timeouts_remaining", "yardline_100", "total_line",
-        "wp",
-        "shotgun", "down", "score_differential", "ydstogo", "posteam_timeouts_remaining", "quarter_seconds_remaining", "no_huddle"
-    ]
+    #"000": [
+    #    "surface", "season", "week", "roof", "location", "div_game", "spread_line",
+    #    "goal_to_go", "game_seconds_remaining", "defteam_timeouts_remaining", "yardline_100", "total_line",
+    #    "wp",
+    #    "shotgun", "down", "score_differential", "ydstogo", "posteam_timeouts_remaining", "quarter_seconds_remaining", "no_huddle"
+    #]
 }
 
 FEATURE_CONFIG = {
@@ -39,6 +39,7 @@ FEATURE_CONFIG = {
     "binary": ["shotgun", "no_huddle", "goal_to_go", "div_game"],
     "nominal": ["surface", "roof", "location"]
 }
+
 
 # ----------------------- Paths -----------------------------------------------------
 FIGURES_EDA = ROOT / "outputs" / "figures" / "eda"
