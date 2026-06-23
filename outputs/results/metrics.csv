@@ -1,0 +1,9 @@
+model,feature_set,accuracy,precision,recall,f1,roc_auc
+LogisticRegression,final,0.7055,0.7033,0.7055,0.6991,0.7574
+XGBoost,final,0.7133,0.712,0.7133,0.7064,0.7781
+LogisticRegression,005,0.7093,0.7067,0.7093,0.7051,0.7597
+XGBoost,005,0.7181,0.717,0.7181,0.7115,0.7857
+LogisticRegression,003,0.7095,0.7069,0.7095,0.7065,0.7604
+XGBoost,003,0.7212,0.719,0.7212,0.717,0.7911
+LogisticRegression,000,0.7057,0.7054,0.7057,0.7055,0.7599
+XGBoost,000,0.7214,0.7191,0.7214,0.7183,0.7918
