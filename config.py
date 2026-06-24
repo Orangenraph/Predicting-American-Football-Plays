@@ -9,18 +9,14 @@ SEASONS = list(range(2016, 2024))  # 8 years
 MISSING_THRESHOLD = 0.05      # Stage 2: max. allowed missing rate per column
 ASSOCIATION_THRESHOLD = 0.05  # Stage 3: min. |r_pb| or Cramér's V to retain a feature
 
-# final after VIF and treshold 0.05; 7 features
-# treshold 0.05; 8 features
-# treshold 0.03; 13 features
-# treshold 0.00; 20 features
 FEATURE_SETS = {
-    #"mini": ["shotgun", "down", "score_differential", "ydstogo", "posteam_timeouts_remaining", "quarter_seconds_remaining", "no_huddle"],
+    "mini": ["shotgun", "down", "score_differential", "ydstogo", "posteam_timeouts_remaining", "quarter_seconds_remaining", "no_huddle"],
     
-    #"comprehensive": [
-    #    "down", "ydstogo", "yardline_100", "goal_to_go", "shotgun", "no_huddle",
-    #    "score_differential", "defteam_score", "posteam_timeouts_remaining", "defteam_timeouts_remaining", "season_type",
-    #    "game_seconds_remaining", "half_seconds_remaining", "qtr", "ep", "wp", "total_line", "drive_start_transition", "roof"
-    #],
+    "comprehensive": [
+        "down", "ydstogo", "yardline_100", "goal_to_go", "shotgun", "no_huddle",
+        "score_differential", "defteam_score", "posteam_timeouts_remaining", "defteam_timeouts_remaining", "season_type",
+        "game_seconds_remaining", "half_seconds_remaining", "qtr", "ep", "wp", "total_line", "drive_start_transition", "roof"
+    ],
 
     "maxi": [
         "down", "ydstogo", "yardline_100", "goal_to_go", "shotgun", "no_huddle",
