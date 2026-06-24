@@ -11,3 +11,4 @@ LogisticRegression,comprehensive,0.7081,0.7056,0.7081,0.7056,0.762
 XGBoost,comprehensive,0.7215,0.7193,0.7215,0.7175,0.7919
 LogisticRegression,maxi,0.7072,0.707,0.7072,0.7071,0.7639
 XGBoost,maxi,0.7307,0.7287,0.7307,0.7279,0.8049
+TabNet,mini,0.7089,0.7124,0.7089,0.7101,0.7776
