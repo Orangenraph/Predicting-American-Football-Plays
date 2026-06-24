@@ -117,8 +117,8 @@ def train_xgboost(
         model : fitted XGBClassifier
     """
     model = XGBClassifier(
-        n_estimators=300, # how many trees get build
-        learning_rate=0.05, # how much it should get corrected
+        n_estimators=800, # how many trees get build
+        learning_rate=0.02, # how much it should get corrected
         max_depth=6, # 6 = 2^6 = 64 nodes
         subsample=0.8, # more entropy to make it robust
         colsample_bytree=0.8, # force model to also weak weak features
