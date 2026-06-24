@@ -14,23 +14,22 @@ ASSOCIATION_THRESHOLD = 0.05  # Stage 3: min. |r_pb| or Cramér's V to retain a 
 # treshold 0.03; 13 features
 # treshold 0.00; 20 features
 FEATURE_SETS = {
-    "final": [
-        "shotgun", "down", "score_differential", "ydstogo", "posteam_timeouts_remaining", "quarter_seconds_remaining", "no_huddle"],
-    "005": [
-        "wp",
-        "shotgun", "down", "score_differential", "ydstogo", "posteam_timeouts_remaining", "quarter_seconds_remaining", "no_huddle"
-    ],
-    "003": [
-        "goal_to_go", "game_seconds_remaining", "defteam_timeouts_remaining", "yardline_100", "total_line",
-        "wp",
-        "shotgun", "down", "score_differential", "ydstogo", "posteam_timeouts_remaining", "quarter_seconds_remaining", "no_huddle"
-    ],
-    #"000": [
-    #    "surface", "season", "week", "roof", "location", "div_game", "spread_line",
+    "minimalistic_": ["shotgun", "down", "score_differential", "ydstogo", "posteam_timeouts_remaining", "quarter_seconds_remaining", "no_huddle"],
+    #"minimalistic_005": [
+    #    "wp",
+    #    "shotgun", "down", "score_differential", "ydstogo", "posteam_timeouts_remaining", "quarter_seconds_remaining", "no_huddle"
+    #],
+    #"minimalistic_003": [
     #    "goal_to_go", "game_seconds_remaining", "defteam_timeouts_remaining", "yardline_100", "total_line",
     #    "wp",
     #    "shotgun", "down", "score_differential", "ydstogo", "posteam_timeouts_remaining", "quarter_seconds_remaining", "no_huddle"
-    #]
+    #],
+    "significant": [
+        "down", "ydstogo", "yardline_100", "goal_to_go", "shotgun", "no_huddle",
+        "score_differential", "defteam_score", "posteam_timeouts_remaining", "defteam_timeouts_remaining",
+        "game_seconds_remaining", "two_minute_drill", "qtr", "ep", "wp", "total_line",
+        "season_type", "drive_start_transition", "roof"
+    ]
 }
 
 FEATURE_CONFIG = {
