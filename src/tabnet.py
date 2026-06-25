@@ -282,16 +282,17 @@ class TabNet(nn.Module):
 
 def train_tabnet(
     X_train, y_train,
-    n_d=16, n_a=16,
+    val_split=0.1,
+    epochs=200,
+    batch_size=1024,
+    lr=1e-3,
+    patience=20,
+    n_d=24, n_a=24,
     n_steps=3,
     gamma=1.5,
     lambda_sparse=1e-4,
-    att_dropout=0.0,
-    final_dropout=0.0,
-    batch_size=1024,
-    patience=60,
-    epochs=300,
-    random_state: int = 42,
+    weight_decay=1e-5,
+    random_state=42,
 ) -> tuple["TabNet", dict, StandardScaler]:
 
     """
