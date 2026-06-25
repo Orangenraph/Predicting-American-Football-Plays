@@ -66,10 +66,62 @@ FEATURE_CONFIG = {
 
 # ----------------------- Models ----------------------------------------
 
+
+TABNET_DEFAULTS = {
+    # Architecture
+    "momentum":           0.02,
+    "virtual_batch_size": 256,
+    "att_dropout":        0.1,
+    "final_dropout":      0.15,
+    # Training
+    "epochs":             300,
+    "batch_size":         4096,
+    "val_split":          0.1,
+    "lr":                 1e-3,
+    "patience":           20,
+    "lambda_sparse":      1e-4,
+    "weight_decay":       1e-4,
+    "random_state":       42,
+    # Optimizer / Scheduler
+    "grad_clip":          1.0,
+    "T_0":                50,
+    "T_mult":             1,
+    "eta_min":            1e-6,
+}
+
 TABNET_PARAMS = {
-    "mini":          dict(n_steps=3, n_d=24, n_a=24, gamma=1.2, lambda_sparse=5e-4, att_dropout=0, final_dropout=0),
-    "comprehensive": dict(n_steps=4, n_d=32, n_a=32, gamma=1.3, lambda_sparse=1e-4),
-    "maxi":          dict(n_steps=5, n_d=32, n_a=32, gamma=1.4, lambda_sparse=1e-3, att_dropout=0.2, final_dropout=0.3, weight_decay=1e-3),
+    "mini": dict(
+        n_steps=4,
+        n_d=32,
+        n_a=32,
+        gamma=1.0,
+        lambda_sparse=1e-5,
+        att_dropout=0,
+        final_dropout=0,
+    ),
+
+    "comprehensive": dict(
+        n_steps=4,
+        n_d=32,
+        n_a=32,
+        gamma=1.3,
+        lambda_sparse=1e-4,
+        att_dropout=0.1,
+        final_dropout=0.1,
+        patience=30,
+    ),
+
+    "maxi": dict(
+        n_steps=5,
+        n_d=32,
+        n_a=32,
+        gamma=1.5,          
+        lambda_sparse=5e-4, 
+        att_dropout=0.15,   
+        final_dropout=0.2,  
+        weight_decay=1e-3,  
+        patience=40,        
+    ),
 }
 
 
