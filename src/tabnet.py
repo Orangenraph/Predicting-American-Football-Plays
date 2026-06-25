@@ -434,6 +434,7 @@ def train_tabnet(
         n_a=n_a,
         n_steps=n_steps,
         gamma=gamma,
+        momentum=momentum,
         virtual_batch_size=virtual_batch_size,
         att_dropout=att_dropout,
         final_dropout=final_dropout,
@@ -443,7 +444,7 @@ def train_tabnet(
     criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
-        optimizer, T_0=50, T_mult=1, eta_min=1e-6
+        optimizer, T_0=T_0, T_mult=T_mult, eta_min=eta_min
     )
 
     # configure validation checkpoint storage parameters to minimize peak system memory usage
