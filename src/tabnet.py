@@ -281,24 +281,19 @@ class TabNet(nn.Module):
 # ---------------------------------------------------------------------------
 
 def train_tabnet(
-    X_train: pd.DataFrame,
-    y_train: pd.Series,
-    val_split: float = 0.1,
-    epochs: int = 200,
-    batch_size: int = 4096,         # OPT GPU: 1024 → 4096
-    lr: float = 2e-3,
-    patience: int = 25,             # OPT: 20 → 25 (mehr Zeit für 6 Steps)
-    n_d: int = 64,                  # OPT 1
-    n_a: int = 64,                  # OPT 1
-    n_steps: int = 6,               # OPT 2
-    gamma: float = 1.3,             # OPT 5
-    lambda_sparse: float = 1e-3,    # OPT: 1e-4 → 1e-3 (stärkere Sparsity-Regularisierung)
-    weight_decay: float = 1e-4,     # OPT: 1e-5 → 1e-4 (stärkeres L2)
-    virtual_batch_size: int = 256,
-    att_dropout: float = 0.1,
-    final_dropout: float = 0.15,
+    X_train, y_train,
+    n_d=16, n_a=16,
+    n_steps=3,
+    gamma=1.5,
+    lambda_sparse=1e-4,
+    att_dropout=0.0,
+    final_dropout=0.0,
+    batch_size=1024,
+    patience=60,
+    epochs=300,
     random_state: int = 42,
 ) -> tuple["TabNet", dict, StandardScaler]:
+
     """
     Trainiert TabNet mit Early Stopping, LR-Scheduling, Ghost BN und Sparsity-Loss.
 
