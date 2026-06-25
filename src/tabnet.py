@@ -488,3 +488,11 @@ class TabNetWrapper:
     def predict(self, X: pd.DataFrame) -> np.ndarray:
         proba = self.predict_proba(X)[:, 1]
         return (proba >= self.threshold).astype(int)
+
+
+'''
+
+
+{'model': 'TabNet', 'feature_set': 'comprehensive', 'accuracy': 0.7147, 'precision': 0.7205, 'recall': 0.7147, 'f1': 0.7161, 'roc_auc': np.float64(0.7897)}
+{'model': 'TabNet', 'feature_set': 'maxi', 'accuracy': 0.7121, 'precision': 0.7211, 'recall': 0.7121, 'f1': 0.7138, 'roc_auc': np.float64(0.7888)}
+'''
