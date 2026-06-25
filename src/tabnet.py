@@ -366,14 +366,8 @@ def train_tabnet(
         final_dropout=final_dropout,
     ).to(device)
 
-    # OPT GPU: torch.compile — einmalige JIT-Kompilierung, danach ~15-25% schneller
-    # Erster Epoch dauert länger (Kompilierung), danach profitiert man dauerhaft
-    if device.type == "cuda":
-        try:
-            model = torch.compile(model)
-            print("[train_tabnet] torch.compile() activated.")
-        except Exception:
-            pass  # Fallback falls PyTorch < 2.0
+    # torch.compile() deaktiviert: auf Colab Free T4 blockiert die einmalige
+    # Graph-Kompilierung 10–15 Minuten und lohnt sich bei ~200 Epochs nicht.
 
     criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
 
