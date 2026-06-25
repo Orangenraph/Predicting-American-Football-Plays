@@ -133,6 +133,7 @@ FIGURES_EDA = ROOT / "outputs" / "figures" / "eda"
 FIGURES_MODELS = ROOT / "outputs" / "figures" / "models"
 RESULTS_METRICS = ROOT / "outputs" / "results" / "metrics.csv"
 CACHE_PATH = ROOT / "data" / "cache" / "pbp_raw.parquet"
+RESULTS_METRICS = ROOT / "outputs" / "results" / "metrics.csv"
 
 # ----------------------- Figs -----------------------------------------------------
 PLOT_PALETTE = "hls"
