@@ -67,9 +67,9 @@ FEATURE_CONFIG = {
 # ----------------------- Models ----------------------------------------
 
 TABNET_PARAMS = {
-    "mini":          dict(n_steps=3, n_d=24, n_a=24, gamma=1.2, lambda_sparse=5e-4),
+    "mini":          dict(n_steps=3, n_d=24, n_a=24, gamma=1.2, lambda_sparse=5e-4, att_dropout=0, final_dropout=0),
     "comprehensive": dict(n_steps=4, n_d=32, n_a=32, gamma=1.3, lambda_sparse=1e-4),
-    "maxi":          dict(n_steps=5, n_d=64, n_a=64, gamma=1.4, lambda_sparse=1e-3),
+    "maxi":          dict(n_steps=5, n_d=32, n_a=32, gamma=1.4, lambda_sparse=1e-3, att_dropout=0.2, final_dropout=0.3, weight_decay=1e-3),
 }
 
 
