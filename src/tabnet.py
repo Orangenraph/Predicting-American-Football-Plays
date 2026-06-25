@@ -285,6 +285,7 @@ def train_tabnet(
     val_split=0.1,
     epochs=200,
     batch_size=1024,
+    virtual_batch_size=128,
     lr=1e-3,
     patience=20,
     n_d=24, n_a=24,
