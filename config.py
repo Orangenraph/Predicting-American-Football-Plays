@@ -10,7 +10,7 @@ MISSING_THRESHOLD = 0.05      # Stage 2: max. allowed missing rate per column
 ASSOCIATION_THRESHOLD = 0.05  # Stage 3: min. |r_pb| or Cramér's V to retain a feature
 
 FEATURE_SETS = {
-    "mini": ["shotgun", "down", "score_differential", "ydstogo", "posteam_timeouts_remaining", "quarter_seconds_remaining", "no_huddle"],
+    #"mini": ["shotgun", "down", "score_differential", "ydstogo", "posteam_timeouts_remaining", "quarter_seconds_remaining", "no_huddle"],
     
     "comprehensive": [
         "down", "ydstogo", "yardline_100", "goal_to_go", "shotgun", "no_huddle",
