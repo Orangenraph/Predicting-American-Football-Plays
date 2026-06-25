@@ -84,10 +84,11 @@ TABNET_DEFAULTS = {
     "random_state":       42,
     # Optimizer / Scheduler
     "grad_clip":          1.0,
-    "T_0":                50,
+    "T_0":                75,
     "T_mult":             1,
     "eta_min":            1e-6,
 }
+
 
 TABNET_PARAMS = {
     "mini": dict(
@@ -98,6 +99,8 @@ TABNET_PARAMS = {
         lambda_sparse=1e-5,
         att_dropout=0,
         final_dropout=0,
+        patience=20,    
+        T_0=100,        
     ),
 
     "comprehensive": dict(
@@ -108,19 +111,19 @@ TABNET_PARAMS = {
         lambda_sparse=1e-4,
         att_dropout=0.1,
         final_dropout=0.1,
-        patience=30,
+        patience=30,    
     ),
 
     "maxi": dict(
         n_steps=5,
-        n_d=32,
-        n_a=32,
-        gamma=1.5,          
-        lambda_sparse=5e-4, 
-        att_dropout=0.15,   
-        final_dropout=0.2,  
-        weight_decay=1e-3,  
-        patience=40,        
+        n_d=48,         
+        n_a=48,         
+        gamma=1.5,
+        lambda_sparse=5e-4,
+        att_dropout=0.15,
+        final_dropout=0.2,
+        weight_decay=2e-3,  
+        patience=40,
     ),
 }
 
