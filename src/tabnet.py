@@ -287,7 +287,7 @@ def train_tabnet(
     batch_size=4096,
     virtual_batch_size=512,
     lr=1e-3,
-    patience=55,
+    patience=25,
     n_d=24, n_a=24,
     n_steps=3,
     gamma=1.5,
