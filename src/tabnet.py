@@ -1,5 +1,3 @@
-# src/tabnet.py
-
 import numpy as np
 import pandas as pd
 import torch
@@ -199,13 +197,6 @@ class TabNet(nn.Module):
         n_steps         : number of sequential attentive steps (default 4)
         gamma           : sparsity regularisation coefficient for prior scales (default 1.5)
         momentum        : BatchNorm momentum (default 0.02)
-
-    Improvements over ResFNN
-        - Attentive feature selection   — learns which features matter per step
-        - Sparsemax masks               — explicit feature sparsity, better generalisation
-        - Sequential multi-step design  — refines representation iteratively
-        - Interpretable attention masks — can be extracted for feature importance
-        - Sparsity regularisation loss  — penalises overuse of all features at once
     """
 
     def __init__(
@@ -335,37 +326,12 @@ def train_tabnet(
 ) -> tuple["TabNet", dict, StandardScaler]:
     """
     Train the TabNet with early stopping, LR scheduling, and sparsity loss.
-
-    Key design choices
-        - AdamW with mild weight_decay        — decoupled L2 regularisation
-        - ReduceLROnPlateau                   — halves LR after 7 stagnant epochs
-        - BCEWithLogitsLoss + pos_weight      — handles class imbalance
-        - Sparsity loss (lambda_sparse)       — encourages focused feature masks
-        - Best weights restored after training regardless of early stopping
-
-    Parameters
-        X_train        : training feature DataFrame (output of get_X_y)
-        y_train        : training target Series (1 = pass, 0 = run)
-        val_split      : fraction used for internal validation (default 0.1)
-        epochs         : maximum training epochs (default 200)
-        batch_size     : mini-batch size (default 512)
-        lr             : initial AdamW learning rate (default 2e-3)
-        patience       : early stopping patience in epochs (default 20)
-        n_d            : decision-step embedding width (default 32)
-        n_a            : attentive-transformer hidden width (default 32)
-        n_steps        : number of sequential attentive steps (default 4)
-        gamma          : prior-scale sparsity coefficient (default 1.5)
-        lambda_sparse  : weight for sparsity regularisation loss (default 1e-4)
-        weight_decay   : L2 regularisation strength for AdamW (default 1e-5)
-        random_state   : seed for reproducibility
-
-    Returns
-        model   : trained TabNet with best validation weights restored
-        history : dict with train_loss, val_loss, and lr per epoch
-        scaler  : fitted StandardScaler (needed by TabNetWrapper)
     """
     torch.manual_seed(random_state)
     np.random.seed(random_state)
+
+    # GPU-Anpassung: Gerät definieren (CUDA falls verfügbar, sonst CPU)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # scale features — fit only on training data to prevent leakage
     scaler  = StandardScaler()
@@ -389,17 +355,20 @@ def train_tabnet(
     y_arr      = y_train.values
     n_pos      = y_arr.sum()
     n_neg      = len(y_arr) - n_pos
-    pos_weight = torch.tensor([n_neg / n_pos], dtype=torch.float32)
+    # GPU-Anpassung: pos_weight Tensor auf das Device schieben
+    pos_weight = torch.tensor([n_neg / n_pos], dtype=torch.float32).to(device)
 
     # model, loss, optimiser, scheduler
     n_features = X_train.shape[1]
+    # GPU-Anpassung: Modell auf das Device schieben (.to(device))
     model      = TabNet(
         n_features=n_features,
         n_d=n_d,
         n_a=n_a,
         n_steps=n_steps,
         gamma=gamma,
-    )
+    ).to(device)
+    
     criterion  = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
     optimizer  = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
     scheduler  = torch.optim.lr_scheduler.ReduceLROnPlateau(
@@ -421,6 +390,9 @@ def train_tabnet(
         model.train()
         train_losses = []
         for X_batch, y_batch in train_loader:
+            # GPU-Anpassung: Batch auf das Device schieben
+            X_batch, y_batch = X_batch.to(device), y_batch.to(device)
+            
             optimizer.zero_grad()
             logits, sparsity = model(X_batch)
             # classification loss + sparsity regularisation
@@ -436,6 +408,9 @@ def train_tabnet(
         val_losses = []
         with torch.no_grad():
             for X_batch, y_batch in val_loader:
+                # GPU-Anpassung: Batch auf das Device schieben
+                X_batch, y_batch = X_batch.to(device), y_batch.to(device)
+                
                 logits, sparsity = model(X_batch)
                 loss = criterion(logits, y_batch) + lambda_sparse * sparsity
                 val_losses.append(loss.item())
@@ -488,10 +463,6 @@ class TabNetWrapper:
 
     The model outputs raw logits; this wrapper applies sigmoid to convert
     them to probabilities and a threshold to produce hard predictions.
-
-    Usage
-        wrapper = TabNetWrapper(model, scaler)
-        metrics = evaluate_model(wrapper, X_test, y_test, "TabNet", "maxi")
     """
 
     def __init__(self, model: TabNet, scaler: StandardScaler, threshold: float = 0.5):
@@ -501,12 +472,18 @@ class TabNetWrapper:
 
     def predict_proba(self, X: pd.DataFrame) -> np.ndarray:
         self.model.eval()
+        # GPU-Anpassung: Ermitteln, auf welchem Device (CPU/CUDA) das Modell liegt
+        device = next(self.model.parameters()).device
+        
         X_scaled = pd.DataFrame(self.scaler.transform(X), columns=X.columns)
-        X_tensor = torch.tensor(X_scaled.values, dtype=torch.float32)
+        # GPU-Anpassung: Tensor auf das richtige Device schieben
+        X_tensor = torch.tensor(X_scaled.values, dtype=torch.float32).to(device)
+        
         with torch.no_grad():
             logits, _ = self.model(X_tensor)
-            # sigmoid converts logits → probabilities
-            proba_pass = torch.sigmoid(logits).numpy()
+            # GPU-Anpassung: .cpu() sorgt dafür, dass die Daten zurückgeholt werden, bevor NumPy sie liest
+            proba_pass = torch.sigmoid(logits).cpu().numpy()
+            
         proba_run = 1 - proba_pass
         return np.column_stack([proba_run, proba_pass])
 
