@@ -12,21 +12,21 @@ ASSOCIATION_THRESHOLD = 0.05  # Stage 3: min. |r_pb| or Cramér's V to retain a 
 FEATURE_SETS = {
     "mini": ["shotgun", "down", "score_differential", "ydstogo", "posteam_timeouts_remaining", "quarter_seconds_remaining", "no_huddle"],
     
-    #"comprehensive": [
-    #    "down", "ydstogo", "yardline_100", "goal_to_go", "shotgun", "no_huddle",
-    #    "score_differential", "defteam_score", "posteam_timeouts_remaining", "defteam_timeouts_remaining", "season_type",
-    #    "game_seconds_remaining", "half_seconds_remaining", "qtr", "ep", "wp", "total_line", "drive_start_transition", "roof"
-    #],
+    "comprehensive": [
+        "down", "ydstogo", "yardline_100", "goal_to_go", "shotgun", "no_huddle",
+        "score_differential", "defteam_score", "posteam_timeouts_remaining", "defteam_timeouts_remaining", "season_type",
+        "game_seconds_remaining", "half_seconds_remaining", "qtr", "ep", "wp", "total_line", "drive_start_transition", "roof"
+    ],
 
-    #"maxi": [
-    #    "down", "ydstogo", "yardline_100", "goal_to_go", "shotgun", "no_huddle",
-    #    "score_differential", "posteam_score", "defteam_score",
-    #    "posteam_timeouts_remaining", "defteam_timeouts_remaining","game_seconds_remaining", "half_seconds_remaining",
-    #    "quarter_seconds_remaining", "qtr","season_type","ep", "wp", "vegas_wp","td_prob", "fg_prob", "opp_fg_prob", 
-    #    "opp_td_prob", "no_score_prob","total_line", "drive_play_count", "drive_first_downs", "drive_inside20", "ydsnet", 
-    #    "drive_start_transition", "roof",  "surface", "location", "posteam_type", "season", "week",
-    #    "posteam", "defteam", "total_home_epa", "total_away_epa","total_home_pass_epa", "total_away_pass_epa",
-    #]
+    "maxi": [
+        "down", "ydstogo", "yardline_100", "goal_to_go", "shotgun", "no_huddle",
+        "score_differential", "posteam_score", "defteam_score",
+        "posteam_timeouts_remaining", "defteam_timeouts_remaining","game_seconds_remaining", "half_seconds_remaining",
+        "quarter_seconds_remaining", "qtr","season_type","ep", "wp", "vegas_wp","td_prob", "fg_prob", "opp_fg_prob", 
+        "opp_td_prob", "no_score_prob","total_line", "drive_play_count", "drive_first_downs", "drive_inside20", "ydsnet", 
+        "drive_start_transition", "roof",  "surface", "location", "posteam_type", "season", "week",
+        "posteam", "defteam", "total_home_epa", "total_away_epa","total_home_pass_epa", "total_away_pass_epa",
+    ]
 }
 
 FEATURE_CONFIG = {
