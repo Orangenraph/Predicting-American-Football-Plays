@@ -313,7 +313,7 @@ def train_tabnet(
     y_train: pd.Series,
     val_split: float = 0.1,
     epochs: int = 200,
-    batch_size: int = 512,
+    batch_size: int = 1024,  # Optimierung: Standardwert auf 1024 erhöht für bessere GPU-Auslastung
     lr: float = 2e-3,
     patience: int = 20,
     n_d: int = 32,
@@ -348,8 +348,9 @@ def train_tabnet(
         generator=torch.Generator().manual_seed(random_state),
     )
 
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-    val_loader   = DataLoader(val_dataset,   batch_size=batch_size, shuffle=False)
+    # Optimierung: "pin_memory=True" hinzugefügt für schnelleren CPU-zu-GPU-Datentransfer
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, pin_memory=True)
+    val_loader   = DataLoader(val_dataset,   batch_size=batch_size, shuffle=False, pin_memory=True)
 
     # pos_weight = n_negative / n_positive — upweights the minority class in loss
     y_arr      = y_train.values
