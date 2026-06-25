@@ -195,10 +195,10 @@ class TabNet(nn.Module):
     def __init__(
         self,
         n_features: int,
-        n_d: int = 64,              # OPT 1: 32 → 64
-        n_a: int = 64,              # OPT 1: 32 → 64
-        n_steps: int = 6,           # OPT 2: 4 → 6
-        gamma: float = 1.3,         # OPT 5: 1.5 → 1.3
+        n_d: int = 24,              # OPT 1: 32 → 64
+        n_a: int = 24,              # OPT 1: 32 → 64
+        n_steps: int = 3,           # OPT 2: 4 → 6
+        gamma: float = 1.5,         # OPT 5: 1.5 → 1.3
         momentum: float = 0.02,
         virtual_batch_size: int = 256,
         att_dropout: float = 0.1,
@@ -293,6 +293,8 @@ def train_tabnet(
     gamma=1.5,
     lambda_sparse=1e-4,
     weight_decay=1e-5,
+    att_dropout=0.1,            
+    final_dropout=0.15,
     random_state=42,
 ) -> tuple["TabNet", dict, StandardScaler]:
 

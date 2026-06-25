@@ -64,6 +64,15 @@ FEATURE_CONFIG = {
     ],
 }
 
+# ----------------------- Models ----------------------------------------
+
+TABNET_PARAMS = {
+    "mini":          dict(n_steps=2, n_d=16, n_a=16, gamma=1.3, lambda_sparse=1e-3),
+    "comprehensive": dict(n_steps=3, n_d=24, n_a=24, gamma=1.5, lambda_sparse=1e-4),
+    "maxi":          dict(n_steps=5, n_d=32, n_a=32, gamma=1.8, lambda_sparse=1e-4),
+}
+
+
 # ----------------------- Paths -----------------------------------------------------
 FIGURES_EDA = ROOT / "outputs" / "figures" / "eda"
 FIGURES_MODELS = ROOT / "outputs" / "figures" / "models"
