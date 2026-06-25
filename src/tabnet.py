@@ -1,6 +1,5 @@
 import os
 import tempfile
-
 import numpy as np
 import pandas as pd
 import torch
@@ -14,24 +13,34 @@ from sklearn.preprocessing import StandardScaler
 
 class PlayCallDataset(Dataset):
     """
-    Wraps a feature df and target series as a PyTorch dataset.
+    PyTorch Dataset wrapper for feature dataframes and targets.
 
-    OPT: Tensors werden direkt auf das Ziel-Device geladen, wenn der
-    gesamte Datensatz in den GPU-Speicher passt (typisch bei NFL-Daten
-    mit ~150 k Zeilen). Das eliminiert den CPU→GPU-Transfer pro Batch
-    vollständig und ist der größte einzelne Speed-Gewinn.
+    Loads tensors directly onto the target device if the dataset fits in 
+    GPU memory, bypassing per-batch CPU-to-GPU transfer overhead.
+
+    Parameters
+        X      : feature DataFrame
+        y      : target Series
+        device : target torch.device
     """
 
     def __init__(self, X: pd.DataFrame, y: pd.Series, device: torch.device | None = None):
+        # determine target execution device
         dev = device if device is not None else torch.device("cpu")
+        
+        # convert input pandas data structures into PyTorch tensors and move to device
         self.X      = torch.tensor(X.values, dtype=torch.float32).to(dev)
         self.y      = torch.tensor(y.values, dtype=torch.float32).to(dev)
+        
+        # track execution location for pipeline decisions
         self.on_gpu = dev.type == "cuda"
 
     def __len__(self):
+        # return the total number of records in the dataset
         return len(self.y)
 
     def __getitem__(self, idx):
+        # retrieve features and corresponding label at specified index
         return self.X[idx], self.y[idx]
 
 
@@ -43,11 +52,16 @@ class GLUBlock(nn.Module):
     """
     Gated Linear Unit block used inside each TabNet step.
 
-    OPT: Ghost Batch Normalisation (GBN) statt Standard-BN.
-    GBN teilt den Batch in virtuelle Sub-Batches der Größe `virtual_batch_size`
-    auf und normalisiert jeden separat. Das entkoppelt die BN-Statistiken von
-    der tatsächlichen Batch-Größe und reduziert Overfitting deutlich –
-    besonders hilfreich, wenn wir auf große Batches (4096) umstellen.
+    Uses Ghost Batch Normalization (GBN) instead of standard BN. GBN splits 
+    the batch into virtual sub-batches to stabilize training with large batches 
+    and act as a regularizer.
+
+    Parameters
+        in_features        : input dimensions
+        out_features       : output dimensions of the GLU block
+        fc_shared          : shared linear layer instance
+        virtual_batch_size : batch size for Ghost BN
+        momentum           : momentum for batch normalization
     """
 
     def __init__(
@@ -59,47 +73,68 @@ class GLUBlock(nn.Module):
         momentum: float = 0.02,
     ):
         super().__init__()
+        # assign shared linear projection and set virtual batch size
         self.fc_shared          = fc_shared
         self.virtual_batch_size = virtual_batch_size
 
-        # Ghost BN für shared und step-spezifischen Pfad
+        # initialize batch normalization for the shared path
         self.bn_shared = nn.BatchNorm1d(out_features * 2, momentum=momentum)
+        
+        # define step-specific linear projection and batch normalization
         self.fc_step   = nn.Linear(in_features, out_features * 2, bias=False)
         self.bn_step   = nn.BatchNorm1d(out_features * 2, momentum=momentum)
 
+        # store output dimensions and scaling factor to control variance growth
         self.out_features = out_features
         self.scale        = (0.5 ** 0.5)
 
     def _ghost_bn(self, bn: nn.BatchNorm1d, x: torch.Tensor) -> torch.Tensor:
-        """Wendet BN auf virtuelle Sub-Batches an und setzt sie wieder zusammen."""
+        """Apply batch normalization on virtual sub-batches."""
+        # retrieve current batch size and virtual sub-batch threshold
         B = x.shape[0]
         vbs = self.virtual_batch_size
 
-        # Wenn Batch kleiner als vbs oder kein GBN gewünscht → normales BN
+        # bypass sub-batch normalization if in evaluation mode or batch is too small
         if not self.training or B <= vbs:
             return bn(x)
 
-        # Teile in Chunks, normalisiere jeden, füge zusammen
+        # partition batch into virtual sub-batches
         chunks  = x.split(vbs, dim=0)
+        
+        # normalize each sub-batch individually using shared running statistics
         normed  = [bn(c) for c in chunks]
+        
+        # reconstruct the unified batch representation
         return torch.cat(normed, dim=0)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # process input through shared and step-specific projections with ghost BN
         h_shared = self._ghost_bn(self.bn_shared, self.fc_shared(x))
         h_step   = self._ghost_bn(self.bn_step,   self.fc_step(x))
+        
+        # aggregate projected representations
         h        = h_shared + h_step
+        
+        # apply gated linear unit activation followed by scaling
         return torch.nn.functional.glu(h, dim=-1) * self.scale
 
 
 class TabNetStep(nn.Module):
     """
-    One attentive step in TabNet.
+    Single sequential selection step in TabNet.
 
-    OPT: Dropout auf dem Attentive Transformer.
-    Die Attention-Maske neigt zum Kollaps auf wenige Features (Overuse).
-    Ein leichter Dropout (p=0.1) auf den Attention-Logits vor Sparsemax
-    zwingt das Modell, alternative Feature-Kombinationen zu explorieren
-    und verbessert die Generalisierung.
+    Includes attention dropout in the Attentive Transformer to prevent 
+    the attention mask from collapsing onto too few features.
+
+    Parameters
+        n_features         : number of input features
+        n_d                : dimensionality of decision prediction representation
+        n_a                : dimensionality of attention transformer representation
+        fc_shared_1        : first shared linear layer
+        fc_shared_2        : second shared linear layer
+        momentum           : momentum for batch normalization
+        virtual_batch_size : batch size for Ghost BN
+        att_dropout        : dropout rate for attention mask logits
     """
 
     def __init__(
@@ -115,11 +150,14 @@ class TabNetStep(nn.Module):
     ):
         super().__init__()
 
+        # initialize linear and batchnorm steps for attention computation
         self.fc_att     = nn.Linear(n_a, n_features, bias=False)
         self.bn_att     = nn.BatchNorm1d(n_features, momentum=momentum)
-        # OPT: Dropout auf Attention-Logits
+        
+        # define attention dropout to prevent over-reliance on limited features
         self.att_drop   = nn.Dropout(p=att_dropout)
 
+        # construct feature transformer block using sequence of two GLU components
         self.glu1 = GLUBlock(n_features,   n_d + n_a, fc_shared_1, virtual_batch_size, momentum)
         self.glu2 = GLUBlock(n_d + n_a,    n_d + n_a, fc_shared_2, virtual_batch_size, momentum)
 
@@ -129,17 +167,24 @@ class TabNetStep(nn.Module):
         prior_scales: torch.Tensor,
         h_prev: torch.Tensor,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        # Attention mask
+        # transform previous steps state into attention space and normalize
         att_logits = self.bn_att(self.fc_att(h_prev))
-        att_logits = self.att_drop(att_logits)          # OPT: Attention Dropout
+        
+        # apply attention dropout to randomly mask parts of decision logits
+        att_logits = self.att_drop(att_logits)
+        
+        # adjust logits using scale history and project via sparsemax to generate attention mask
         att_logits = att_logits * prior_scales
         alpha      = self._sparsemax(att_logits)
 
+        # filter input feature representation using computed mask
         masked_x = alpha * x
 
-        # Feature Transformer
+        # process filtered features through sequential GLU blocks
         h     = self.glu1(masked_x)
         h     = self.glu2(h)
+        
+        # partition feature transformer output into decision and attention channels
         n_d   = h.shape[-1] // 2
         h_out = h[:, :n_d]
         h_a   = h[:, n_d:]
@@ -148,13 +193,22 @@ class TabNetStep(nn.Module):
 
     @staticmethod
     def _sparsemax(z: torch.Tensor) -> torch.Tensor:
-        """Sparsemax activation (Martins & Astudillo, 2016)."""
+        """Sparsemax activation function (Martins & Astudillo, 2016)."""
+        # sort logits in descending order for cumulative distribution calculations
         z_sorted, _ = torch.sort(z, dim=-1, descending=True)
         z_cumsum    = torch.cumsum(z_sorted, dim=-1)
+        
+        # define coordinate index mapping array
         k           = torch.arange(1, z.shape[-1] + 1, device=z.device, dtype=z.dtype)
+        
+        # identify threshold indicators where conditional mass is strictly positive
         z_check     = 1 + k * z_sorted > z_cumsum
         k_z         = z_check.sum(dim=-1, keepdim=True)
+        
+        # compute probability threshold offset parameter
         tau         = (z_cumsum.gather(-1, k_z - 1) - 1) / k_z.float()
+        
+        # clip results to maintain correct output support
         return torch.clamp(z - tau, min=0)
 
 
@@ -164,60 +218,55 @@ class TabNetStep(nn.Module):
 
 class TabNet(nn.Module):
     """
-    TabNet für binäre Play-Call-Klassifikation.
+    TabNet architecture adapted for binary play-call classification.
 
-    Architektur-Änderungen gegenüber der Basisversion:
-    ┌─────────────────────────────────────────────────────────────┐
-    │ OPT 1 │ n_d / n_a: 32 → 64                                 │
-    │        │ Mehr Kapazität pro Step. Der Val-Loss stagnierte   │
-    │        │ früh — das deutet auf Underfitting der Steps,      │
-    │        │ nicht auf zu viel Kapazität.                       │
-    ├─────────────────────────────────────────────────────────────┤
-    │ OPT 2 │ n_steps: 4 → 6                                     │
-    │        │ Mehr sequentielle Attention-Steps erlauben         │
-    │        │ feinere Feature-Interaktionen. XGBoost profitiert  │
-    │        │ von tiefen Bäumen; TabNet braucht mehr Steps.      │
-    ├─────────────────────────────────────────────────────────────┤
-    │ OPT 3 │ Ghost Batch Normalisation (via GLUBlock)            │
-    │        │ Stabilisiert Training mit großen Batches und       │
-    │        │ reduziert Overfitting ohne zusätzliche Parameter.  │
-    ├─────────────────────────────────────────────────────────────┤
-    │ OPT 4 │ Finaler Dropout vor dem Output-Head (p=0.15)       │
-    │        │ Klassischer Regularisierer; der Gap Train/Val      │
-    │        │ in der Kurve zeigt, dass er hier nötig ist.        │
-    ├─────────────────────────────────────────────────────────────┤
-    │ OPT 5 │ gamma: 1.5 → 1.3                                   │
-    │        │ Niedrigeres gamma = mehr Feature-Reuse erlaubt.   │
-    │        │ Bei 33 Features und 6 Steps ist Reuse sinnvoll.   │
-    └─────────────────────────────────────────────────────────────┘
+    Design adjustments from the baseline implementation:
+        - Increased step capacities (n_d, n_a) to mitigate early underfitting.
+        - Higher sequential depth (n_steps) to resolve complex tabular patterns.
+        - Lower gamma value to encourage feature reuse across steps.
+        - Dropout layers added to the decision head to manage train-validation gap.
+
+    Parameters
+        n_features         : number of input features
+        n_d                : output dimension for prediction representation
+        n_a                : output dimension for attention mask
+        n_steps            : count of sequential decision steps
+        gamma              : scaling coefficient for prioritizing unused features
+        momentum           : batch normalization momentum
+        virtual_batch_size : batch size for Ghost BN
+        att_dropout        : dropout rate for attention mask logits
+        final_dropout      : dropout rate before the output head
     """
 
     def __init__(
         self,
-        n_features: int,
-        n_d: int = 24,              # OPT 1: 32 → 64
-        n_a: int = 24,              # OPT 1: 32 → 64
-        n_steps: int = 3,           # OPT 2: 4 → 6
-        gamma: float = 1.5,         # OPT 5: 1.5 → 1.3
-        momentum: float = 0.02,
-        virtual_batch_size: int = 256,
-        att_dropout: float = 0.1,
-        final_dropout: float = 0.15,  # OPT 4
+        n_features:         int,
+        n_d:                int,
+        n_a:                int,
+        n_steps:            int,
+        gamma:              float,
+        momentum:           float,
+        virtual_batch_size: int,
+        att_dropout:        float,
+        final_dropout:      float,
     ):
         super().__init__()
 
+        # store global execution configurations
         self.n_features = n_features
         self.n_d        = n_d
         self.n_a        = n_a
         self.n_steps    = n_steps
         self.gamma      = gamma
 
+        # perform baseline normalisation on raw input features
         self.initial_bn = nn.BatchNorm1d(n_features, momentum=momentum)
 
-        # Shared layers (weight-tied across steps)
+        # construct shared linear structures to reuse weights across sequential steps
         self.fc_shared_1 = nn.Linear(n_features,  (n_d + n_a) * 2, bias=False)
         self.fc_shared_2 = nn.Linear(n_d + n_a,   (n_d + n_a) * 2, bias=False)
 
+        # construct sequential decision steps
         self.steps = nn.ModuleList([
             TabNetStep(
                 n_features=n_features,
@@ -232,47 +281,61 @@ class TabNet(nn.Module):
             for _ in range(n_steps)
         ])
 
-        # OPT 4: Dropout vor Output-Head
+        # construct final output decision structure
         self.final_dropout = nn.Dropout(p=final_dropout)
         self.output_head   = nn.Linear(n_d, 1)
 
     def forward(
         self, x: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        # normalize raw input values
         x = self.initial_bn(x)
 
+        # initialize scaling metrics, state trackers, and sparsity loss containers
         prior_scales     = torch.ones(x.shape[0], self.n_features, device=x.device)
         h_a              = torch.zeros(x.shape[0], self.n_a, device=x.device)
         decision_outputs = []
         sparsity_loss    = torch.zeros(1, device=x.device)
 
+        # execute sequential selection steps
         for step in self.steps:
             h_out, h_a, alpha = step(x, prior_scales, h_a)
             decision_outputs.append(h_out)
+            
+            # update tracking status of unused features and compile entropy metrics
             prior_scales = prior_scales * (self.gamma - alpha)
             sparsity_loss += (-alpha * torch.log(alpha + 1e-15)).sum(dim=-1).mean()
 
+        # synthesize outcomes across steps
         agg    = torch.stack(decision_outputs, dim=0).sum(dim=0)
         agg    = torch.relu(agg)
-        agg    = self.final_dropout(agg)          # OPT 4
+        
+        # apply regularization prior to prediction mapping
+        agg    = self.final_dropout(agg)
         logits = self.output_head(agg).squeeze(1)
 
+        # return estimated logits along with averaged entropy loss of attention weights
         return logits, sparsity_loss / self.n_steps
 
     def get_feature_importances(self, x: torch.Tensor) -> np.ndarray:
-        """Summe der Attention-Gewichte über alle Steps, gemittelt über den Batch."""
+        """Compute aggregated attention weights across steps, averaged over the batch."""
+        # switch state to evaluation mode and apply initial normalisation
         self.eval()
         x            = self.initial_bn(x)
+        
+        # initialize scale tracking configurations
         prior_scales = torch.ones(x.shape[0], self.n_features, device=x.device)
         h_a          = torch.zeros(x.shape[0], self.n_a, device=x.device)
         total_alpha  = torch.zeros(x.shape[0], self.n_features, device=x.device)
 
+        # accumulate selection metrics across all layers without tracking gradients
         with torch.no_grad():
             for step in self.steps:
                 _, h_a, alpha = step(x, prior_scales, h_a)
                 prior_scales  = prior_scales * (self.gamma - alpha)
                 total_alpha  += alpha
 
+        # compile average feature contribution scores across batch
         return total_alpha.mean(dim=0).cpu().numpy()
 
 
@@ -282,48 +345,59 @@ class TabNet(nn.Module):
 
 def train_tabnet(
     X_train, y_train,
-    val_split=0.1,
-    epochs=300,
-    batch_size=4096,
-    virtual_batch_size=512,
-    lr=1e-3,
-    patience=25,
-    n_d=24, n_a=24,
-    n_steps=3,
-    gamma=1.5,
-    lambda_sparse=1e-4,
-    weight_decay=1e-4,
-    att_dropout=0.1,            
-    final_dropout=0.15,
-    random_state=42,
+    # Data
+    val_split:          float,
+    random_state:       int,
+    # Architecture
+    n_d:                int,
+    n_a:                int,
+    n_steps:            int,
+    gamma:              float,
+    momentum:           float,
+    virtual_batch_size: int,
+    att_dropout:        float,
+    final_dropout:      float,
+    # Training
+    epochs:             int,
+    batch_size:         int,
+    lr:                 float,
+    patience:           int,
+    lambda_sparse:      float,
+    weight_decay:       float,
+    # Scheduler
+    grad_clip:          float,
+    T_0:                int,
+    T_mult:             int,
+    eta_min:            float,
 ) -> tuple["TabNet", dict, StandardScaler]:
-
     """
-    Trainiert TabNet mit Early Stopping, LR-Scheduling, Ghost BN und Sparsity-Loss.
+    Train TabNet using early stopping, cosine annealing, and sparsity objectives.
 
-    Wichtigste Hyperparameter-Änderungen:
-      lambda_sparse : 1e-4 → 1e-3  — stärker sparse Attention erzwingen
-      weight_decay  : 1e-5 → 1e-4  — stärkeres L2 gegen Overfitting
-      batch_size    : 1024 → 4096  — GPU-Auslastung + stabilere BN-Statistiken
-      patience      : 20   → 25    — mehr Raum für das tiefere Modell
+    Hyperparameter updates:
+        - Adjusted lambda_sparse for stronger sparsity enforcement.
+        - Increased weight decay to limit overfitting risks.
+        - Scaled batch size to optimize GPU batch operations.
+        - Extended patience window to allow deeper models to converge.
     """
+    # set deterministic computational constraints
     torch.manual_seed(random_state)
     np.random.seed(random_state)
 
+    # configure computational target device
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"[train_tabnet] Using device: {device}")
 
-    # Scale features — fit only on training data
+    # calculate standardization metrics only on the training feature distribution
     scaler  = StandardScaler()
     X_scaled = pd.DataFrame(
         scaler.fit_transform(X_train), columns=X_train.columns, index=X_train.index
     )
 
-    # OPT GPU: Datensatz direkt auf GPU laden (eliminiert per-Batch Transfer)
-    # → num_workers=0 nötig, da CUDA-Tensors nicht über Worker-Prozesse geteilt werden können
+    # instantiate the master dataset directly on the target execution device
     preload_device = device if device.type == "cuda" else None
     full_dataset   = PlayCallDataset(X_scaled, y_train, device=preload_device)
 
+    # split the data into training and validation sets
     val_size     = int(len(full_dataset) * val_split)
     train_size   = len(full_dataset) - val_size
     train_dataset, val_dataset = random_split(
@@ -332,9 +406,9 @@ def train_tabnet(
         generator=torch.Generator().manual_seed(random_state),
     )
 
-    # OPT GPU: num_workers=0 bei GPU-Preloading, sonst 2 für CPU-Betrieb
+    # optimize data loading process based on execution device status
     nw = 0 if (device.type == "cuda") else 2
-    pw = device.type != "cuda"   # pin_memory nur sinnvoll bei CPU-Tensors
+    pw = device.type != "cuda"
     train_loader = DataLoader(
         train_dataset, batch_size=batch_size, shuffle=True,
         pin_memory=pw, num_workers=nw,
@@ -346,13 +420,13 @@ def train_tabnet(
         persistent_workers=(nw > 0),
     )
 
-    # Class imbalance: pos_weight = n_neg / n_pos
+    # compute balancing weights to manage class imbalance
     y_arr      = y_train.values
     n_pos      = y_arr.sum()
     n_neg      = len(y_arr) - n_pos
     pos_weight = torch.tensor([n_neg / n_pos], dtype=torch.float32).to(device)
 
-    # Modell
+    # instantiate model on target device
     n_features = X_train.shape[1]
     model = TabNet(
         n_features=n_features,
@@ -365,23 +439,14 @@ def train_tabnet(
         final_dropout=final_dropout,
     ).to(device)
 
-    # torch.compile() deaktiviert: auf Colab Free T4 blockiert die einmalige
-    # Graph-Kompilierung 10–15 Minuten und lohnt sich bei ~200 Epochs nicht.
-
+    # set loss objective, optimizer, and cyclic learning rate decay rules
     criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
-
-    # OPT: AdamW bleibt, aber mit stärkerem weight_decay
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
-
-    # OPT: CosineAnnealingWarmRestarts statt ReduceLROnPlateau
-    # Cosine-Schedule ist für TabNet besser dokumentiert als Step-Reduktion:
-    # der LR schwillt periodisch an und hilft, aus lokalen Minima herauszukommen.
-    # T_0=50: erste Periode 50 Epochs, T_mult=1: alle Perioden gleich lang.
     scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
         optimizer, T_0=50, T_mult=1, eta_min=1e-6
     )
 
-    # OPT RAM: Checkpoint auf Disk statt clone() im RAM
+    # configure validation checkpoint storage parameters to minimize peak system memory usage
     best_ckpt  = os.path.join(tempfile.gettempdir(), "tabnet_best.pt")
     history    = {"train_loss": [], "val_loss": [], "lr": []}
     best_val   = float("inf")
@@ -389,14 +454,16 @@ def train_tabnet(
 
     for epoch in range(1, epochs + 1):
 
-        # --- Training ---
+        # --- Training phase ---
         model.train()
         train_losses = []
         for X_batch, y_batch in train_loader:
-            if device.type != "cuda":          # bei GPU-Preloading bereits auf Device
+            # perform system memory copies only if data is not preloaded on target device
+            if device.type != "cuda":
                 X_batch = X_batch.to(device, non_blocking=True)
                 y_batch = y_batch.to(device, non_blocking=True)
 
+            # optimize weight configurations
             optimizer.zero_grad()
             logits, sparsity = model(X_batch)
             loss = criterion(logits, y_batch) + lambda_sparse * sparsity
@@ -405,14 +472,15 @@ def train_tabnet(
             optimizer.step()
             train_losses.append(loss.item())
 
-        # Cosine Schedule: pro Epoch updaten
+        # step learning rate decay cycle
         scheduler.step(epoch - 1)
 
-        # --- Validation ---
+        # --- Validation phase ---
         model.eval()
         val_losses = []
         with torch.no_grad():
             for X_batch, y_batch in val_loader:
+                # transfer validation batches to device if required
                 if device.type != "cuda":
                     X_batch = X_batch.to(device, non_blocking=True)
                     y_batch = y_batch.to(device, non_blocking=True)
@@ -420,6 +488,7 @@ def train_tabnet(
                 loss = criterion(logits, y_batch) + lambda_sparse * sparsity
                 val_losses.append(loss.item())
 
+        # calculate average loss values and store tracking metrics
         train_loss = np.mean(train_losses)
         val_loss   = np.mean(val_losses)
         current_lr = optimizer.param_groups[0]["lr"]
@@ -428,15 +497,15 @@ def train_tabnet(
         history["val_loss"].append(val_loss)
         history["lr"].append(current_lr)
 
-        # Early Stopping + Checkpoint
+        # apply validation checks to determine checkpoint updates
         if val_loss < best_val:
             best_val   = val_loss
             no_improve = 0
-            # OPT RAM: Weights auf Disk, nicht im RAM-Dict
             torch.save(model.state_dict(), best_ckpt)
         else:
             no_improve += 1
 
+        # print optimization updates at set intervals
         if epoch % 10 == 0 or no_improve == patience:
             print(
                 f"  Epoch {epoch:>3} | "
@@ -446,11 +515,12 @@ def train_tabnet(
                 f"no_improve: {no_improve}/{patience}"
             )
 
+        # terminate training if validation progress plateaus
         if no_improve >= patience:
             print(f"\n[train_tabnet] Early stopping at epoch {epoch}.")
             break
 
-    # Bestes Modell laden
+    # restore best performing parameter weights
     model.load_state_dict(torch.load(best_ckpt, map_location=device))
     print(f"[train_tabnet] Training complete. Best val_loss: {best_val:.4f}")
 
@@ -458,40 +528,43 @@ def train_tabnet(
 
 
 # ---------------------------------------------------------------------------
-# Wrapper  (sklearn-compatible interface for evaluate_model / plot functions)
+# Wrapper
 # ---------------------------------------------------------------------------
 
 class TabNetWrapper:
     """
-    Sklearn-style Wrapper um ein trainiertes TabNet.
-    Interface identisch zur Vorgängerversion — kein Änderungsbedarf in evaluate_model.
+    Sklearn-compatible interface wrapper for PyTorch TabNet model.
+
+    Simplifies calls from pipeline operations, model evaluations, 
+    and plotting workflows.
     """
 
     def __init__(self, model: TabNet, scaler: StandardScaler, threshold: float = 0.5):
+        # assign execution wrapper attributes
         self.model     = model
         self.scaler    = scaler
         self.threshold = threshold
 
     def predict_proba(self, X: pd.DataFrame) -> np.ndarray:
+        # transition model to evaluation state and fetch system device target
         self.model.eval()
         device   = next(self.model.parameters()).device
+        
+        # scale features and map to PyTorch tensors on the proper device
         X_scaled = pd.DataFrame(self.scaler.transform(X), columns=X.columns)
         X_tensor = torch.tensor(X_scaled.values, dtype=torch.float32).to(device)
 
+        # generate raw predictions and map them to standard probability distributions
         with torch.no_grad():
             logits, _ = self.model(X_tensor)
             proba_pass = torch.sigmoid(logits).cpu().numpy()
 
+        # structure predicted probabilities as a standard two-class matrix
         return np.column_stack([1 - proba_pass, proba_pass])
 
     def predict(self, X: pd.DataFrame) -> np.ndarray:
+        # fetch probability estimates of positive target outcomes
         proba = self.predict_proba(X)[:, 1]
+        
+        # map probability scores to binary labels using set threshold limits
         return (proba >= self.threshold).astype(int)
-
-
-'''
-
-
-{'model': 'TabNet', 'feature_set': 'comprehensive', 'accuracy': 0.7147, 'precision': 0.7205, 'recall': 0.7147, 'f1': 0.7161, 'roc_auc': np.float64(0.7897)}
-{'model': 'TabNet', 'feature_set': 'maxi', 'accuracy': 0.7121, 'precision': 0.7211, 'recall': 0.7121, 'f1': 0.7138, 'roc_auc': np.float64(0.7888)}
-'''
