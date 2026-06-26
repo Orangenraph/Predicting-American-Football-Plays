@@ -95,6 +95,39 @@ FNN_PARAMS = {
     ),
 }
 
+RESFNN_DEFAULTS = {
+    # Architecture
+    "proj_dim":      128,
+    "dropout":       0.4,
+    # Training
+    "epochs":        200,
+    "batch_size":    512,
+    "val_split":     0.1,
+    "lr":            3e-4,
+    "patience":      15,
+    "weight_decay":  1e-2,
+    "random_state":  42,
+    # Scheduler
+    "sched_factor":  0.5,
+    "sched_patience": 8,
+    "min_lr":        1e-6,
+}
+
+RESFNN_PARAMS = {
+    "mini": dict(
+        proj_dim=64,
+    ),
+    "comprehensive": dict(
+        proj_dim=128,
+        sched_patience=10
+    ),
+    "maxi": dict(
+        proj_dim=128,
+        dropout=0.5,
+        weight_decay= 2e-2,
+    ),
+}
+
 
 TABNET_DEFAULTS = {
     # Architecture
@@ -153,39 +186,6 @@ TABNET_PARAMS = {
         final_dropout=0.2,
         weight_decay=2e-3,  
         patience=40,
-    ),
-}
-
-RESFNN_DEFAULTS = {
-    # Architecture
-    "proj_dim":      128,
-    "dropout":       0.4,
-    # Training
-    "epochs":        200,
-    "batch_size":    512,
-    "val_split":     0.1,
-    "lr":            3e-4,
-    "patience":      15,
-    "weight_decay":  1e-2,
-    "random_state":  42,
-    # Scheduler
-    "sched_factor":  0.5,
-    "sched_patience": 8,
-    "min_lr":        1e-6,
-}
-
-RESFNN_PARAMS = {
-    "mini": dict(
-        proj_dim=64,
-    ),
-    "comprehensive": dict(
-        proj_dim=128,
-        sched_patience=10
-    ),
-    "maxi": dict(
-        proj_dim=128,
-        dropout=0.5,
-        weight_decay= 2e-2,
     ),
 }
 
