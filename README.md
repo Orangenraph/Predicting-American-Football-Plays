@@ -110,6 +110,8 @@ All paths are resolved automatically relative to `config.py` using `pathlib`, so
 All models plateau around **71–73% accuracy** and **0.78–0.80 ROC-AUC** on the held-out test set, consistent with prior literature. XGBoost on the `maxi` feature set achieves the strongest single result (accuracy: 0.7307, ROC-AUC: 0.8049).
 
 ![Model comparison across all feature sets and metrics](outputs/figures/models/fig1_metric_comparison.png)
+![Model comparison across all feature sets and metrics](outputs/figures/models/fig2_feature_set_gain.png)
+![Model comparison across all feature sets and metrics](outputs/figures/models/fig3_roc_auc_ranking.png)
 
 Key findings:
 - XGBoost outperforms deep learning approaches (FNN, ResFNN, TabNet) on this tabular dataset
