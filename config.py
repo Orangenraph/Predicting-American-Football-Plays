@@ -66,6 +66,35 @@ FEATURE_CONFIG = {
 
 # ----------------------- Models ----------------------------------------
 
+FNN_DEFAULTS = {
+    "hidden_dims":   [128, 64, 32],
+    "dropout":       0.3,
+    "epochs":        150,        # war 100 — comprehensive braucht mehr Luft
+    "batch_size":    512,
+    "val_split":     0.1,
+    "lr":            3e-4,
+    "patience":      15,         # war 10 — passt zu mehr epochs
+    "random_state":  42,
+}
+
+FNN_PARAMS = {
+    "mini": dict(
+        hidden_dims=[128, 64],   # war [64, 32] — etwas mehr Kapazität gegen Underfitting
+        dropout=0.15,            # war 0.2 — weniger regularisierung bei kleinem Netz
+        lr=5e-4,                 # schneller konvergieren bei wenig features
+    ),
+    "comprehensive": dict(
+        hidden_dims=[128, 64, 32],  # defaults passen, explizit zur Klarheit
+        lr=3e-4,
+    ),
+    "maxi": dict(
+        hidden_dims=[128, 64, 32],  # war [256, 128, 64] — runterscalen gegen Overfitting
+        dropout=0.5,                # war 0.4 — stärker regularisieren
+        lr=1e-4,                    # langsamer, stabiler bei vielen features
+        patience=20,                # mehr Geduld, der Fit ist noisier
+    ),
+}
+
 
 TABNET_DEFAULTS = {
     # Architecture

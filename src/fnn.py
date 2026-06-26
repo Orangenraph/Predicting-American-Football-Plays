@@ -1,5 +1,3 @@
-#src/fnn.py
-
 import numpy as np
 import pandas as pd
 import torch
@@ -7,15 +5,17 @@ import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader, random_split
 from sklearn.preprocessing import StandardScaler
 
+from config import FNN_DEFAULTS, FNN_PARAMS
+
+
 # ---------------------------------------------------------------------------
 # Dataset
 # ---------------------------------------------------------------------------
 
 class PlayCallDataset(Dataset):
-    """Wraps a feature df and target series as a PyTorch dataset"""
+    """Wraps a feature df and target series as a PyTorch dataset."""
 
     def __init__(self, X: pd.DataFrame, y: pd.Series):
-        # casting float32 to avoid runtime errors
         self.X = torch.tensor(X.values, dtype=torch.float32)
         self.y = torch.tensor(y.values, dtype=torch.float32)
 
@@ -32,37 +32,30 @@ class PlayCallDataset(Dataset):
 
 class FNN(nn.Module):
     """
-    Two-hidden-layer Feedforward Neural Network for binary classification.
+    Feedforward Neural Network for binary classification.
 
-    Architecture
-        Linear(n_features → 64)      → ReLU         → Dropout(p)
-        Linear(64 → 32)              → ReLU         → Dropout(p)
-        Linear(32 → 1)               → Sigmoid
+    Architecture is driven by `hidden_dims` from config:
+        Linear(n_features → hidden_dims[0]) → ReLU → Dropout
+        ...
+        Linear(hidden_dims[-1] → 1)         → Sigmoid
 
     Parameters
-        n_features  : number of input features inferred from X_train
-        dropout     : dropout probability applied after each hidden layer default 0.3
+        n_features  : number of input features
+        hidden_dims : list of hidden layer widths  (from FNN_DEFAULTS)
+        dropout     : dropout probability after each hidden layer
     """
 
-    def __init__(self, n_features: int, dropout: float = 0.3):
+    def __init__(self, n_features: int, hidden_dims: list[int], dropout: float):
         super().__init__()
-        # definiing layers seq.
-        self.network = nn.Sequential(
-            nn.Linear(n_features, 128),
-            nn.ReLU(),
-            nn.Dropout(dropout), # helps prevent network from memorizing sprase features patterns
-            nn.Linear(128, 64),
-            nn.ReLU(),
-            nn.Dropout(dropout),
-            nn.Linear(64, 32),
-            nn.ReLU(),
-            nn.Dropout(dropout),
-            nn.Linear(32, 1),
-            nn.Sigmoid(), #paired with BCEloss in training loop
-        )
+        layers = []
+        in_dim = n_features
+        for h in hidden_dims:
+            layers += [nn.Linear(in_dim, h), nn.ReLU(), nn.Dropout(dropout)]
+            in_dim = h
+        layers += [nn.Linear(in_dim, 1), nn.Sigmoid()]
+        self.network = nn.Sequential(*layers)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # removes extra dimensions to match target shape
         return self.network(x).squeeze(1)
 
 
@@ -70,154 +63,137 @@ class FNN(nn.Module):
 # Training loop
 # ---------------------------------------------------------------------------
 
+def _resolve_params(feature_set: str | None) -> dict:
+    """Merge FNN_DEFAULTS with feature-set-specific overrides."""
+    params = dict(FNN_DEFAULTS)
+    if feature_set is not None:
+        params.update(FNN_PARAMS.get(feature_set, {}))
+    return params
+
+
 def train_fnn(
     X_train: pd.DataFrame,
     y_train: pd.Series,
-    val_split: float = 0.1,
-    epochs: int = 100,
-    batch_size: int = 512,
-    lr: float = 3e-4,
-    patience: int = 10,
-    dropout: float = 0.3,
-    random_state: int = 42,
-) -> tuple[FNN, dict]:
+    feature_set: str | None = None,   # "mini" | "comprehensive" | "maxi"
+    **overrides,
+) -> tuple["FNN", dict, StandardScaler]:
     """
-    Train the FNN with early stopping on validation split
+    Train the FNN with early stopping on a validation split.
 
-    The best model weights (lowest validation loss) are restored after
-    training stops, regardless of whether early stopping was triggered
+    Hyper-parameters are resolved in order:
+        FNN_DEFAULTS  →  FNN_PARAMS[feature_set]  →  **overrides
 
     Parameters
-        X_train      : training feature df (output of get_X_y)
-        y_train      : training target Series
-        val_split    : fraction of training data used for validation (default 0.1)
-        epochs       : maximum training epochs (default 100)
-        batch_size   : mini batch size (default 512 — safe for my personal 8 GB RAM on CPU)
-        lr           : Adam learning rate (default 1e-3)
-        patience     : early stopping patience in epochs (default 10)
-        dropout      : dropout probability (default 0.3)
-        random_state : seed for reproducibility
+        X_train     : training feature df (output of get_X_y)
+        y_train     : training target Series
+        feature_set : one of "mini" / "comprehensive" / "maxi" (optional)
+        **overrides : any FNN_DEFAULTS key to override ad-hoc
     """
-    # seeding for reporducible
+    p = _resolve_params(feature_set)
+    p.update(overrides)
+
+    # --- reproducibility ---
+    torch.manual_seed(p["random_state"])
+    np.random.seed(p["random_state"])
+
+    # --- scaling ---
     scaler = StandardScaler()
     X_train = pd.DataFrame(scaler.fit_transform(X_train), columns=X_train.columns)
-    torch.manual_seed(random_state)
-    np.random.seed(random_state)
 
-    # data setsplits 
+    # --- datasets ---
     full_dataset = PlayCallDataset(X_train, y_train)
-
-    val_size   = int(len(full_dataset) * val_split)
-    train_size = len(full_dataset) - val_size
-
-    # using generator with seed guarentess validation split
+    val_size     = int(len(full_dataset) * p["val_split"])
+    train_size   = len(full_dataset) - val_size
     train_dataset, val_dataset = random_split(
         full_dataset,
         [train_size, val_size],
-        generator=torch.Generator().manual_seed(random_state),
+        generator=torch.Generator().manual_seed(p["random_state"]),
     )
+    train_loader = DataLoader(train_dataset, batch_size=p["batch_size"], shuffle=True)
+    val_loader   = DataLoader(val_dataset,   batch_size=p["batch_size"], shuffle=False)
 
-    # shuffle prevents from learning order based patterns
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-    val_loader   = DataLoader(val_dataset,   batch_size=batch_size, shuffle=False)
+    # --- model / loss / optimiser ---
+    model     = FNN(n_features=X_train.shape[1], hidden_dims=p["hidden_dims"], dropout=p["dropout"])
+    criterion = nn.BCELoss()
+    optimizer = torch.optim.Adam(model.parameters(), lr=p["lr"])
 
-    # model, loss, optimiser 
-    n_features = X_train.shape[1]
-    model      = FNN(n_features=n_features, dropout=dropout)
-    criterion  = nn.BCELoss()
-    optimizer  = torch.optim.Adam(model.parameters(), lr=lr)
-
-    # Training loop 
-    history         = {"train_loss": [], "val_loss": []}
-    best_val_loss   = float("inf")
-    best_weights    = None
+    # --- training loop ---
+    history           = {"train_loss": [], "val_loss": []}
+    best_val_loss     = float("inf")
+    best_weights      = None
     epochs_no_improve = 0
 
-    for epoch in range(1, epochs + 1):
+    for epoch in range(1, p["epochs"] + 1):
 
-        # Train mode enables dropout active behavior
         model.train()
         train_losses = []
         for X_batch, y_batch in train_loader:
-            optimizer.zero_grad() # clear gradient before calc. new one
-            preds = model(X_batch)
-            loss  = criterion(preds, y_batch)
-            loss.backward() # calc gradients
-            optimizer.step() #update weights
+            optimizer.zero_grad()
+            loss = criterion(model(X_batch), y_batch)
+            loss.backward()
+            optimizer.step()
             train_losses.append(loss.item())
 
-        # eval mode disables dropout layes for consistenty 
         model.eval()
         val_losses = []
-        # disables gradient tracking to save memory and speed up
         with torch.no_grad():
             for X_batch, y_batch in val_loader:
-                preds = model(X_batch)
-                loss  = criterion(preds, y_batch)
-                val_losses.append(loss.item())
+                val_losses.append(criterion(model(X_batch), y_batch).item())
 
         train_loss = np.mean(train_losses)
         val_loss   = np.mean(val_losses)
-
         history["train_loss"].append(train_loss)
         history["val_loss"].append(val_loss)
 
-        # early stopping check
         if val_loss < best_val_loss:
-            best_val_loss  = val_loss
-            best_weights   = {k: v.clone() for k, v in model.state_dict().items()} # to copy weights instead of shraing reference
+            best_val_loss     = val_loss
+            best_weights      = {k: v.clone() for k, v in model.state_dict().items()}
             epochs_no_improve = 0
         else:
             epochs_no_improve += 1
 
-        if epoch % 10 == 0 or epochs_no_improve == patience:
+        if epoch % 10 == 0 or epochs_no_improve == p["patience"]:
             print(
                 f"  Epoch {epoch:>3} | "
                 f"train_loss: {train_loss:.4f} | "
                 f"val_loss: {val_loss:.4f} | "
-                f"no_improve: {epochs_no_improve}/{patience}"
+                f"no_improve: {epochs_no_improve}/{p['patience']}"
             )
 
-        if epochs_no_improve >= patience:
+        if epochs_no_improve >= p["patience"]:
             print(f"\n[train_fnn] Early stopping at epoch {epoch}.")
             break
 
-    # restore best weights to ensure the retunred model has opitmal parameters
     model.load_state_dict(best_weights)
     print(f"[train_fnn] Training complete. Best val_loss: {best_val_loss:.4f}")
-
     return model, history, scaler
 
 
 # ---------------------------------------------------------------------------
-# Predict helper  (makes FNN compatible with evaluate_model in evaluation.py)
+# Sklearn-style wrapper
 # ---------------------------------------------------------------------------
 
 class FNNWrapper:
     """
-    short sklearn-style wrapper around a trained FNN
+    Drop-in sklearn-style wrapper around a trained FNN.
 
     Usage
-        wrapper = FNNWrapper(model)
-        metrics = evaluate_model(wrapper, X_test, y_test, "FNN", "final")
+        wrapper = FNNWrapper(model, scaler)
+        metrics = evaluate_model(wrapper, X_test, y_test, "FNN", "mini")
     """
 
-    def __init__(self, model: FNN, scaler: StandardScaler,threshold: float = 0.5):
+    def __init__(self, model: FNN, scaler: StandardScaler, threshold: float = 0.5):
         self.model     = model
         self.scaler    = scaler
         self.threshold = threshold
 
     def predict_proba(self, X: pd.DataFrame) -> np.ndarray:
-        self.model.eval() #ensure dropout is off during evalutation
+        self.model.eval()
         X_scaled = pd.DataFrame(self.scaler.transform(X), columns=X.columns)
         X_tensor = torch.tensor(X_scaled.values, dtype=torch.float32)
         with torch.no_grad():
             proba_pass = self.model(X_tensor).numpy()
-        proba_run = 1 - proba_pass
-        # column stack conversts 1D arrays into 2d to match scikitlearn standard settings
-        return np.column_stack([proba_run, proba_pass])
+        return np.column_stack([1 - proba_pass, proba_pass])
 
     def predict(self, X: pd.DataFrame) -> np.ndarray:
-        proba = self.predict_proba(X)[:, 1]
-        # applies treshhold to convert raw probabilities to 1 or 0
-        return (proba >= self.threshold).astype(int)
+        return (self.predict_proba(X)[:, 1] >= self.threshold).astype(int)
