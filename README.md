@@ -30,7 +30,7 @@ This project develops and compares machine learning models for predicting whethe
 
 ```
 .
-├── config.py                  # paths, feature sets, thresholds
+├── config.py                  # params, paths, feature sets, thresholds
 ├── requirements.txt
 ├── notebooks/
 │   ├── 01_exploration.ipynb
