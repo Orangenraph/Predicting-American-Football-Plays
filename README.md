@@ -8,7 +8,7 @@ Bachelor's Thesis — Wirtschaftsuniversität Wien (WU Vienna)
 
 ## Overview
 
-This project develops and compares machine learning models for predicting whether an NFL offensive play will be a **pass** or a **run**, framed as a binary classification task. Using NFL play-by-play data from the 2016–2023 seasons (sourced via `nflreadpy`/nflverse), four model families are evaluated across three distinct feature sets of increasing size and complexity.
+This project develops and compares machine learning models for predicting whether an NFL offensive play will be a **pass** or a **run**, framed as a binary classification task. Using NFL play-by-play data from the 2016–2023 seasons (sourced via `nflreadpy`/nflverse), five model families are evaluated across three distinct feature sets of increasing size and complexity.
 
 **Models compared:**
 - Logistic Regression (baseline)
@@ -30,7 +30,7 @@ This project develops and compares machine learning models for predicting whethe
 
 ```
 .
-├── config.py                  # Single source of truth: paths, feature sets, thresholds
+├── config.py                  # paths, feature sets, thresholds
 ├── requirements.txt
 ├── notebooks/
 │   ├── 01_exploration.ipynb
@@ -43,8 +43,8 @@ This project develops and compares machine learning models for predicting whethe
 │   └── 07_results.ipynb
 ├── src/
 │   ├── data_loader.py         # NFL data fetching and caching (parquet)
-│   ├── preprocessing.py       # Encoding pipeline (numeric, ordinal, binary, nominal)
-│   ├── feature_selection.py   # Association-based feature filtering (Cramér's V, point-biserial)
+│   ├── preprocessing.py       # Encoding pipeline
+│   ├── feature_selection.py   # Association-based feature filtering
 │   ├── models.py              # Shared model utilities
 │   ├── logistic_regression.py # Logistic Regression wrapper
 │   ├── xgboost.py             # XGBoost wrapper
@@ -78,7 +78,6 @@ Special teams, penalties, and two-point conversion plays are excluded. Only stan
 ### Prerequisites
 
 - Python 3.10+
-- CUDA-capable GPU recommended for FNN and TabNet (CPU fallback supported)
 
 ### Installation
 
@@ -93,38 +92,48 @@ pip install -r requirements.txt
 Notebooks are numbered and designed to be run in order:
 
 ```
-01 → Feature exploration & selection
-02 → Preprocessing pipeline verification
-03 → Logistic Regression experiments
-04 → XGBoost experiments
-05 → FNN experiments
+01 → Feature exploration
+02 → Feature selection (mini & maxi)
+03 → Classical models (Logistic Regression & XGBoost)
+04 → FNN experiments
+05 → ResFNN experiments
 06 → TabNet experiments
+07 → Results & comparison
 ```
 
 All paths are resolved automatically relative to `config.py` using `pathlib`, so no manual path configuration is needed.
 
 ---
 
-## Configuration
+## Results Summary
 
-All global settings live in `config.py`:
+All models plateau around **71–73% accuracy** and **0.78–0.80 ROC-AUC** on the held-out test set, consistent with prior literature. XGBoost on the `maxi` feature set achieves the strongest single result (accuracy: 0.7307, ROC-AUC: 0.8049).
 
-- `SEASONS` — which NFL seasons to load
-- `FEATURE_SETS` — the three named feature sets (`mini`, `comprehensive`, `maxi`)
-- `FEATURE_CONFIG` — type metadata for each feature (numeric, ordinal, binary, nominal)
-- `MISSING_THRESHOLD` / `ASSOCIATION_THRESHOLD` — feature selection cutoffs
-- Output paths for figures and result CSVs
+![Model comparison across all feature sets and metrics](outputs/figures/models/fig1_metric_comparison.png)
+
+Key findings:
+- XGBoost outperforms deep learning approaches (FNN, ResFNN, TabNet) on this tabular dataset
+- The `maxi` feature set underperforms `comprehensive` for deep learning models, consistent with the Curse of Dimensionality
+- No model exceeded ~73% accuracy, suggesting an inherent upper bound on play-call predictability in the NFL
 
 ---
 
-## Results Summary
+## Hardware & Limitations
 
-All models plateau around **71–72% accuracy** and **0.78–0.79 ROC-AUC** on the held-out test set, consistent with prior literature. XGBoost on the `maxi` feature set achieves the strongest single result (accuracy: 0.7307, ROC-AUC: 0.8049).
+All experiments were conducted on a consumer-grade laptop with limited computational resources:
 
-Key findings:
-- XGBoost outperforms deep learning approaches (FNN, TabNet) on this tabular dataset
-- The `maxi` feature set underperforms `comprehensive` for deep learning models, consistent with the Curse of Dimensionality
-- Play-calling predictability is inherently limited (~29% irreducible error), reflecting strategic randomization by NFL teams
+- **CPU:** AMD Ryzen 5 7520U (4 cores / 8 threads)
+- **RAM:** 8 GB
+- **GPU:** AMD Radeon Graphics (integrated, no CUDA support)
+
+Due to these constraints, deep learning models (FNN, ResFNN, TabNet) were trained on CPU only, which significantly restricted the feasible hyperparameter search space and training time. Given more powerful hardware, the following extensions could likely improve results:
+
+- **More seasons** — extending the training window beyond 2016–2021 to include earlier NFL data
+- **Systematic hyperparameter tuning** — e.g. full grid search or Bayesian optimization for neural network architectures
+- **Larger batch sizes and more epochs** — particularly beneficial for TabNet and ResFNN
+- **GPU-accelerated training** — enabling deeper architectures and faster iteration
+
+These limitations are an inherent part of the project scope and do not invalidate the comparative findings between model families.
 
 ---
 
