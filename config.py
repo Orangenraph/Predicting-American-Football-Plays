@@ -193,6 +193,7 @@ TABNET_PARAMS = {
 # ----------------------- Paths -----------------------------------------------------
 FIGURES_EDA = ROOT / "outputs" / "figures" / "eda"
 FIGURES_MODELS = ROOT / "outputs" / "figures" / "models"
+TABLES = ROOT / "outputs" / "tables"
 RESULTS_METRICS = ROOT / "outputs" / "results" / "metrics.csv"
 CACHE_PATH = ROOT / "data" / "cache" / "pbp_raw.parquet"
 RESULTS_METRICS = ROOT / "outputs" / "results" / "metrics.csv"

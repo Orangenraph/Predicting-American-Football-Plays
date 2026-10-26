@@ -24,6 +24,29 @@ def build_target(df: pd.DataFrame) -> pd.Series:
     return (df["play_type"] == "pass").astype(int).rename("target")
 
 
+PREVIEW_COLS = ["season", "qtr", "down", "ydstogo", "yardline_100", "score_differential"]
+
+
+def make_preview_table(df: pd.DataFrame, n: int = 8, cols: list = None, random_state: int = 42) -> pd.DataFrame:
+    """
+    Small example table of the filtered dataset (pass/run only) incl. target,
+    meant for the thesis (a raw head() has 300+ columns and does not fit a page).
+    Draws one random play per season (n seasons, evenly spread) instead of the
+    first rows, so the sample is not just the opening drive of one game
+    """
+    cols = cols or PREVIEW_COLS
+    plays = filter_plays(df)
+    preview = plays[cols].copy()
+    preview["pass"] = build_target(plays)
+    # drop rows with missing values so the example has no NaNs
+    preview = preview.dropna()
+    # one random play per season, picked evenly across the available seasons
+    per_season = preview.groupby("season", group_keys=False).sample(n=1, random_state=random_state)
+    idx = np.linspace(0, len(per_season) - 1, min(n, len(per_season))).round().astype(int)
+    out = per_season.sort_values("season").iloc[idx]
+    return out.reset_index(drop=True).astype({"season": int, "qtr": int, "down": int, "ydstogo": int})
+
+
 # ---------------------------------------------------------------------------
 # Step 2 - Select features
 # ---------------------------------------------------------------------------
