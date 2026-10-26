@@ -48,18 +48,21 @@ class PlayCallDataset(Dataset):
 # TabNet building blocks
 # ---------------------------------------------------------------------------
 
-class GLUBlock(nn.Module):
+class GLULayer(nn.Module):
     """
-    Gated Linear Unit block used inside each TabNet step.
+    Fully connected layer with batch normalization and a Gated Linear Unit,
+    one layer of the TabNet feature transformer.
 
-    Uses Ghost Batch Normalization (GBN) instead of standard BN. GBN splits 
-    the batch into virtual sub-batches to stabilize training with large batches 
-    and act as a regularizer.
+    The linear layer is either passed in (shared across all decision steps)
+    or created here (belongs to a single step). Batch normalization is always
+    per step. Uses Ghost Batch Normalization (GBN) instead of standard BN. GBN
+    splits the batch into virtual sub-batches to stabilize training with large
+    batches and act as a regularizer.
 
     Parameters
         in_features        : input dimensions
-        out_features       : output dimensions of the GLU block
-        fc_shared          : shared linear layer instance
+        out_features       : output dimensions of the GLU layer
+        fc                 : shared linear layer instance, None = step-specific
         virtual_batch_size : batch size for Ghost BN
         momentum           : momentum for batch normalization
     """
@@ -68,25 +71,15 @@ class GLUBlock(nn.Module):
         self,
         in_features: int,
         out_features: int,
-        fc_shared: nn.Linear,
+        fc: nn.Linear | None = None,
         virtual_batch_size: int = 256,
         momentum: float = 0.02,
     ):
         super().__init__()
-        # assign shared linear projection and set virtual batch size
-        self.fc_shared          = fc_shared
+        # shared linear projection or a new step-specific one
+        self.fc = fc if fc is not None else nn.Linear(in_features, out_features * 2, bias=False)
+        self.bn = nn.BatchNorm1d(out_features * 2, momentum=momentum)
         self.virtual_batch_size = virtual_batch_size
-
-        # initialize batch normalization for the shared path
-        self.bn_shared = nn.BatchNorm1d(out_features * 2, momentum=momentum)
-        
-        # define step-specific linear projection and batch normalization
-        self.fc_step   = nn.Linear(in_features, out_features * 2, bias=False)
-        self.bn_step   = nn.BatchNorm1d(out_features * 2, momentum=momentum)
-
-        # store output dimensions and scaling factor to control variance growth
-        self.out_features = out_features
-        self.scale        = (0.5 ** 0.5)
 
     def _ghost_bn(self, bn: nn.BatchNorm1d, x: torch.Tensor) -> torch.Tensor:
         """Apply batch normalization on virtual sub-batches."""
@@ -108,15 +101,9 @@ class GLUBlock(nn.Module):
         return torch.cat(normed, dim=0)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # process input through shared and step-specific projections with ghost BN
-        h_shared = self._ghost_bn(self.bn_shared, self.fc_shared(x))
-        h_step   = self._ghost_bn(self.bn_step,   self.fc_step(x))
-        
-        # aggregate projected representations
-        h        = h_shared + h_step
-        
-        # apply gated linear unit activation followed by scaling
-        return torch.nn.functional.glu(h, dim=-1) * self.scale
+        # linear projection, ghost BN, then gated linear unit activation
+        h = self._ghost_bn(self.bn, self.fc(x))
+        return torch.nn.functional.glu(h, dim=-1)
 
 
 class TabNetStep(nn.Module):
@@ -157,9 +144,13 @@ class TabNetStep(nn.Module):
         # define attention dropout to prevent over-reliance on limited features
         self.att_drop   = nn.Dropout(p=att_dropout)
 
-        # construct feature transformer block using sequence of two GLU components
-        self.glu1 = GLUBlock(n_features,   n_d + n_a, fc_shared_1, virtual_batch_size, momentum)
-        self.glu2 = GLUBlock(n_d + n_a,    n_d + n_a, fc_shared_2, virtual_batch_size, momentum)
+        # feature transformer: two layers shared across all steps, then two layers of this step only
+        self.n_d   = n_d
+        self.scale = 0.5 ** 0.5   # keeps the variance stable on the residual sums
+        self.shared_1 = GLULayer(n_features, n_d + n_a, fc_shared_1, virtual_batch_size, momentum)
+        self.shared_2 = GLULayer(n_d + n_a,  n_d + n_a, fc_shared_2, virtual_batch_size, momentum)
+        self.step_1   = GLULayer(n_d + n_a,  n_d + n_a, None,        virtual_batch_size, momentum)
+        self.step_2   = GLULayer(n_d + n_a,  n_d + n_a, None,        virtual_batch_size, momentum)
 
     def forward(
         self,
@@ -180,14 +171,15 @@ class TabNetStep(nn.Module):
         # filter input feature representation using computed mask
         masked_x = alpha * x
 
-        # process filtered features through sequential GLU blocks
-        h     = self.glu1(masked_x)
-        h     = self.glu2(h)
-        
-        # partition feature transformer output into decision and attention channels
-        n_d   = h.shape[-1] // 2
-        h_out = h[:, :n_d]
-        h_a   = h[:, n_d:]
+        # feature transformer: shared layers first, then the step-specific layers
+        h = self.shared_1(masked_x)
+        h = (h + self.shared_2(h)) * self.scale
+        h = (h + self.step_1(h))   * self.scale
+        h = (h + self.step_2(h))   * self.scale
+
+        # split into decision output d[i] and information a[i] for the next step
+        h_out = h[:, :self.n_d]
+        h_a   = h[:, self.n_d:]
 
         return h_out, h_a, alpha
 
@@ -300,16 +292,16 @@ class TabNet(nn.Module):
         # execute sequential selection steps
         for step in self.steps:
             h_out, h_a, alpha = step(x, prior_scales, h_a)
-            decision_outputs.append(h_out)
-            
+            # ReLU on every decision output before they are summed
+            decision_outputs.append(torch.relu(h_out))
+
             # update tracking status of unused features and compile entropy metrics
             prior_scales = prior_scales * (self.gamma - alpha)
             sparsity_loss += (-alpha * torch.log(alpha + 1e-15)).sum(dim=-1).mean()
 
-        # synthesize outcomes across steps
+        # sum of the ReLU decision outputs across steps
         agg    = torch.stack(decision_outputs, dim=0).sum(dim=0)
-        agg    = torch.relu(agg)
-        
+
         # apply regularization prior to prediction mapping
         agg    = self.final_dropout(agg)
         logits = self.output_head(agg).squeeze(1)

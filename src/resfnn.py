@@ -34,39 +34,29 @@ class PlayCallDataset(Dataset):
 
 class ResidualBlock(nn.Module):
     """
-    A single residual block:
-        x → Linear(in → out) → BN → ReLU → Dropout
-          → Linear(out → out) → BN
-          + skip(x projected to out if dims differ)
-          → ReLU
+    A single residual block, h(l+1) = h(l) + F(h(l)):
+        F = BN → ReLU → Linear(dim → dim) → BN → ReLU → Linear(dim → dim)
+        skip connection = identity
 
-    Batch Normalisation is applied before activation (pre-activation style).
-    The skip connection stabilises gradients and allows the network to learn
-    incremental refinements rather than full transformations at each layer.
+    The block keeps the width, so the input is added unchanged to the output
+    of F. If the block has nothing to contribute it can learn F ≈ 0 and pass
+    the signal through.
     """
 
-    def __init__(self, in_features: int, out_features: int, dropout: float):
+    def __init__(self, dim: int):
         super().__init__()
 
         self.block = nn.Sequential(
-            nn.Linear(in_features, out_features),
-            nn.BatchNorm1d(out_features),
+            nn.BatchNorm1d(dim),
             nn.ReLU(),
-            nn.Dropout(dropout),
-            nn.Linear(out_features, out_features),
-            nn.BatchNorm1d(out_features),
+            nn.Linear(dim, dim),
+            nn.BatchNorm1d(dim),
+            nn.ReLU(),
+            nn.Linear(dim, dim),
         )
-
-        self.skip = (
-            nn.Linear(in_features, out_features, bias=False)
-            if in_features != out_features
-            else nn.Identity()
-        )
-
-        self.relu = nn.ReLU()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.relu(self.block(x) + self.skip(x))
+        return x + self.block(x)
 
 
 # ---------------------------------------------------------------------------
@@ -78,10 +68,10 @@ class ResFNN(nn.Module):
     Residual Feedforward Neural Network for binary play-call classification.
 
     Architecture (with default proj_dim=128)
-        Input projection : Linear(n_features → proj_dim)   → BN → ReLU → Dropout
-        ResidualBlock    : proj_dim     → proj_dim // 2    (projects skip)
-        ResidualBlock    : proj_dim//2  → proj_dim // 4    (projects skip)
-        Output head      : Linear(proj_dim // 4 → 1)
+        Input projection : Linear(n_features → proj_dim)
+        ResidualBlock    : proj_dim → proj_dim  (identity skip)
+        ResidualBlock    : proj_dim → proj_dim  (identity skip)
+        Output head      : BN → ReLU → Dropout → Linear(proj_dim → 1)
 
     All dimension and dropout values are sourced from config.RESFNN_DEFAULTS
     / RESFNN_PARAMS so there are no magic numbers in this file.
@@ -90,21 +80,18 @@ class ResFNN(nn.Module):
     def __init__(self, n_features: int, proj_dim: int, dropout: float):
         super().__init__()
 
-        d1 = proj_dim
-        d2 = proj_dim // 2
-        d3 = proj_dim // 4
+        # map the input to the block width, the blocks keep this width
+        self.input_proj = nn.Linear(n_features, proj_dim)
 
-        self.input_proj = nn.Sequential(
-            nn.Linear(n_features, d1),
-            nn.BatchNorm1d(d1),
+        self.res_block1 = ResidualBlock(proj_dim)
+        self.res_block2 = ResidualBlock(proj_dim)
+
+        self.output_head = nn.Sequential(
+            nn.BatchNorm1d(proj_dim),
             nn.ReLU(),
             nn.Dropout(dropout),
+            nn.Linear(proj_dim, 1),
         )
-
-        self.res_block1 = ResidualBlock(d1, d2, dropout=dropout)
-        self.res_block2 = ResidualBlock(d2, d3, dropout=max(dropout - 0.1, 0.1))
-
-        self.output_head = nn.Linear(d3, 1)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.input_proj(x)
