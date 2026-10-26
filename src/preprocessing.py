@@ -5,13 +5,43 @@ import numpy as np
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import OrdinalEncoder
 
+from config import CUMULATIVE_EPA_COLS
+
+#---------------------------------------------------------------------------
+# Step 0 - Cumulative EPA before the snap
+#---------------------------------------------------------------------------
+def lag_cumulative_epa(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    nflverse cumulative EPA columns (total_home_epa, ...) already include the
+    current play. Shift them by one play within each game so every row only
+    holds the value before the snap, first play of a game starts at 0
+    Must run on the full play-by-play (all play types) before filter_plays
+    """
+    df = df.copy()
+    cols = [c for c in CUMULATIVE_EPA_COLS if c in df.columns]
+    if not cols:
+        return df
+
+    # chronological order inside a game, result is aligned back via the index
+    order = ["game_id", "order_sequence"] if "order_sequence" in df.columns else ["game_id", "play_id"]
+    lagged = df.sort_values(order).groupby("game_id")[cols].shift(1)
+    df[cols] = lagged.fillna(0)
+    return df
+
 #---------------------------------------------------------------------------
 # Step 1 - Filter to pass / run plays and build binary target
 #---------------------------------------------------------------------------
 def filter_plays(df: pd.DataFrame) -> pd.DataFrame:
-    """Keep only pass and run plays, reset index"""
+    """
+    Keep only offensive pass and run plays, reset index
+    play_type pass/run already drops special teams and plays nullified by a
+    penalty (no_play), two-point conversions are removed explicitly
+    """
     #exclude other play types
     mask = df["play_type"].isin(["pass", "run"])
+    # two-point conversions start at a fixed spot and follow a different logic
+    if "two_point_attempt" in df.columns:
+        mask &= df["two_point_attempt"] != 1
     return df[mask].copy().reset_index(drop=True)
 
 
@@ -256,6 +286,7 @@ def preprocess(
     Full preprocessing pipeline
 
     Steps
+        0. Shift cumulative EPA columns to their value before the snap
         1. Filter to pass / run plays and build binary target (1 = pass, 0 = run)
         2. Select feature columns
         3. Impute missing values
@@ -271,8 +302,11 @@ def preprocess(
         df_clean       : clean, processed DataFrame with features and a 'target' column
     """
 
+    # Step 0 cumulative EPA without the current play (needs all play types)
+    df = lag_cumulative_epa(df_raw)
+
     # Step 1 filter play type run or pass and generate binary predition target
-    df = filter_plays(df_raw)
+    df = filter_plays(df)
     y = build_target(df)
 
     # Step 2  extract specific columns defined in feature list

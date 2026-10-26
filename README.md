@@ -20,9 +20,11 @@ This project develops and compares machine learning models for predicting whethe
 **Feature sets:**
 | Name | Size | Description |
 |---|---|---|
-| `mini` | ~7 features | Core situational variables (down, distance, shotgun, ...) |
-| `comprehensive` | ~33 features | Extended game-state features (EPA, WP, time, ...) |
-| `maxi` | ~121 features | Full feature space including team identity and OHE expansions |
+| `mini` | 7 features | Down, distance, score, quarter clock, offense timeouts, shotgun, no_huddle. Selected by association and VIF |
+| `comprehensive` | 20 features | mini plus field position, game and half clock, quarter, expected points, win probability, defense score and timeouts, betting total, drive start, roof, season type |
+| `maxi` | 38 features | comprehensive plus team identity, season, week, offense score, betting win probability, scoring probabilities, cumulative EPA before the snap, surface, location |
+
+Each set contains all columns of the set above it.
 
 ---
 
@@ -40,12 +42,14 @@ This project develops and compares machine learning models for predicting whethe
 │   ├── 04_fnn.ipynb
 │   ├── 05_resfnn.ipynb
 │   ├── 06_tabnet.ipynb
-│   └── 07_results.ipynb
+│   ├── 07_results.ipynb
+│   └── 08_results_chapter_inputs.ipynb
 ├── src/
 │   ├── data_loader.py         # NFL data fetching and caching (parquet)
 │   ├── preprocessing.py       # Encoding pipeline
 │   ├── feature_selection.py   # Association-based feature filtering
 │   ├── models.py              # Shared model utilities
+│   ├── analysis.py            # Permutation importance and error analysis
 │   ├── logistic_regression.py # Logistic Regression wrapper
 │   ├── xgboost.py             # XGBoost wrapper
 │   ├── fnn.py                 # PyTorch FNN + FNNWrapper (sklearn-compatible)
@@ -70,6 +74,8 @@ Play-by-play data is loaded via the [`nflreadpy`](https://github.com/nflverse/nf
 - Test: 2022–2023 (2 seasons)
 
 Special teams, penalties, and two-point conversion plays are excluded. Only standard scrimmage plays with a clearly defined pass/run outcome are retained.
+
+Feature selection (association with the target and VIF) uses the training seasons only. The nflverse cumulative EPA columns already include the current play, so preprocessing shifts them by one play to their value before the snap.
 
 ---
 
@@ -99,6 +105,7 @@ Notebooks are numbered and designed to be run in order:
 05 → ResFNN experiments
 06 → TabNet experiments
 07 → Results & comparison
+08 → Results chapter inputs (permutation importance, error analysis)
 ```
 
 All paths are resolved automatically relative to `config.py` using `pathlib`, so no manual path configuration is needed.

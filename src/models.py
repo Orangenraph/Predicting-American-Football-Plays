@@ -2,10 +2,12 @@
 
 import pandas as pd
 
+from config import TEST_SEASONS
+
 
 def split_data(
     df_raw: pd.DataFrame,
-    test_seasons: list[int] = [2022, 2023],  # at least 2 years to test
+    test_seasons: list[int] = TEST_SEASONS,  # 2022-2023, train is 2016-2021
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
     Temporal train / test split on raw df

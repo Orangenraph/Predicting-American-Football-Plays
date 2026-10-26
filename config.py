@@ -4,30 +4,46 @@ ROOT = Path(__file__).resolve().parent
 
 # ----------------------- Data -----------------------------------------------------
 SEASONS = list(range(2016, 2024))  # 8 years
+TEST_SEASONS = [2022, 2023]        # chronological split: train 2016-2021, test 2022-2023
 
 # ----------------------- Feature Selection ----------------------------------------
 MISSING_THRESHOLD = 0.05      # Stage 2: max. allowed missing rate per column
-ASSOCIATION_THRESHOLD = 0.05  # Stage 3: min. |r_pb| or Cramér's V to retain a feature
+ASSOCIATION_THRESHOLD = 0.05  # Stage 3: min. |r_pb| or Cramér's V to retain a feature (training seasons only)
+VIF_THRESHOLD = 5.0           # Stage 4: VIF above this value counts as critical multicollinearity
 
+# each set contains all columns of the set above it (thesis, Table 3.3)
 FEATURE_SETS = {
+    # 7 - selected by association and VIF
     "mini": ["shotgun", "down", "score_differential", "ydstogo", "posteam_timeouts_remaining", "quarter_seconds_remaining", "no_huddle"],
-    
+
+    # 20 - mini plus field position, game and half clock, quarter, expected points, win probability,
+    # defense score and timeouts, betting total, drive start, roof, season type
     "comprehensive": [
         "down", "ydstogo", "yardline_100", "goal_to_go", "shotgun", "no_huddle",
-        "score_differential", "defteam_score", "posteam_timeouts_remaining", "defteam_timeouts_remaining", "season_type", "surface",
-        "game_seconds_remaining", "half_seconds_remaining", "qtr", "ep", "wp", "total_line", "drive_start_transition", "roof"
+        "score_differential", "defteam_score", "posteam_timeouts_remaining", "defteam_timeouts_remaining",
+        "game_seconds_remaining", "half_seconds_remaining", "quarter_seconds_remaining", "qtr",
+        "ep", "wp", "total_line", "drive_start_transition", "roof", "season_type",
     ],
 
+    # 38 - comprehensive plus team identity, season, week, offense score, betting win probability,
+    # scoring probabilities, cumulative EPA before the snap, surface, location
+    # drive summaries (drive_play_count, drive_first_downs, drive_inside20, ydsnet) are excluded,
+    # they are only known once the drive has ended
     "maxi": [
         "down", "ydstogo", "yardline_100", "goal_to_go", "shotgun", "no_huddle",
-        "score_differential", "posteam_score", "defteam_score",
-        "posteam_timeouts_remaining", "defteam_timeouts_remaining","game_seconds_remaining", "half_seconds_remaining",
-        "quarter_seconds_remaining", "qtr","season_type","ep", "wp", "vegas_wp","td_prob", "fg_prob", "opp_fg_prob", 
-        "opp_td_prob", "no_score_prob","total_line", "drive_play_count", "drive_first_downs", "drive_inside20", "ydsnet", 
-        "drive_start_transition", "roof",  "surface", "location", "posteam_type", "season", "week",
-        "posteam", "defteam", "total_home_epa", "total_away_epa","total_home_pass_epa", "total_away_pass_epa",
+        "score_differential", "defteam_score", "posteam_timeouts_remaining", "defteam_timeouts_remaining",
+        "game_seconds_remaining", "half_seconds_remaining", "quarter_seconds_remaining", "qtr",
+        "ep", "wp", "total_line", "drive_start_transition", "roof", "season_type",
+        "posteam", "defteam", "posteam_type", "season", "week", "posteam_score", "vegas_wp",
+        "td_prob", "fg_prob", "opp_fg_prob", "opp_td_prob", "no_score_prob",
+        "total_home_epa", "total_away_epa", "total_home_pass_epa", "total_away_pass_epa",
+        "surface", "location",
     ]
 }
+
+# nflverse cumulative EPA columns already include the current play,
+# preprocessing shifts them by one play so only the value before the snap is used
+CUMULATIVE_EPA_COLS = ["total_home_epa", "total_away_epa", "total_home_pass_epa", "total_away_pass_epa"]
 
 FEATURE_CONFIG = {
     "numeric": [
@@ -39,7 +55,6 @@ FEATURE_CONFIG = {
         "posteam_timeouts_remaining", "defteam_timeouts_remaining",
         "total_line", "spread_line",
         "td_prob", "fg_prob", "opp_fg_prob", "opp_td_prob", "no_score_prob",
-        "drive_play_count", "drive_first_downs", "ydsnet",
         "total_home_epa", "total_away_epa",
         "total_home_pass_epa", "total_away_pass_epa",
         "season", "week",
@@ -50,7 +65,6 @@ FEATURE_CONFIG = {
     },
     "binary": [
         "shotgun", "no_huddle", "goal_to_go", "div_game",
-        "drive_inside20",
     ],
     "nominal": [
         "roof",                  # 'dome' / 'outdoors' / 'closed' / 'open'
@@ -196,7 +210,6 @@ FIGURES_MODELS = ROOT / "outputs" / "figures" / "models"
 TABLES = ROOT / "outputs" / "tables"
 RESULTS_METRICS = ROOT / "outputs" / "results" / "metrics.csv"
 CACHE_PATH = ROOT / "data" / "cache" / "pbp_raw.parquet"
-RESULTS_METRICS = ROOT / "outputs" / "results" / "metrics.csv"
 
 # ----------------------- Figs -----------------------------------------------------
 PLOT_PALETTE = "hls"
