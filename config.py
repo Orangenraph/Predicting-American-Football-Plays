@@ -14,7 +14,7 @@ FEATURE_SETS = {
     
     "comprehensive": [
         "down", "ydstogo", "yardline_100", "goal_to_go", "shotgun", "no_huddle",
-        "score_differential", "defteam_score", "posteam_timeouts_remaining", "defteam_timeouts_remaining", "season_type",
+        "score_differential", "defteam_score", "posteam_timeouts_remaining", "defteam_timeouts_remaining", "season_type", "surface",
         "game_seconds_remaining", "half_seconds_remaining", "qtr", "ep", "wp", "total_line", "drive_start_transition", "roof"
     ],
 
